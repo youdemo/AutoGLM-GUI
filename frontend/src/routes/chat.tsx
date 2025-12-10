@@ -49,11 +49,26 @@ function ChatComponent() {
     scrollToBottom();
   }, [messages]);
 
-  // 检查初始化状态
+  // 检查初始化状态并自动初始化
   useEffect(() => {
-    getStatus()
-      .then(status => setInitialized(status.initialized))
-      .catch(() => setInitialized(false));
+    const initializeAgent = async () => {
+      try {
+        const status = await getStatus();
+        if (status.initialized) {
+          setInitialized(true);
+        } else {
+          // 自动初始化
+          setError(null);
+          await initAgent();
+          setInitialized(true);
+        }
+      } catch (error) {
+        setInitialized(false);
+        setError('初始化失败，请确保后端服务正在运行');
+      }
+    };
+
+    initializeAgent();
   }, []);
 
   // 每 3 秒刷新截图
@@ -131,18 +146,27 @@ function ChatComponent() {
       userMessage.content,
       // onStep
       (event: StepEvent) => {
-        setMessages(prev =>
-          prev.map(msg =>
+        console.log('[Chat] Processing step event:', event);
+        setMessages(prev => {
+          const targetMsg = prev.find(msg => msg.id === agentMessageId);
+          if (!targetMsg) return prev;
+
+          const newThinking = [...(targetMsg.thinking || []), event.thinking];
+          const newActions = [...(targetMsg.actions || []), event.action];
+
+          const updated = prev.map(msg =>
             msg.id === agentMessageId
               ? {
                   ...msg,
-                  thinking: [...(msg.thinking || []), event.thinking],
-                  actions: [...(msg.actions || []), event.action],
+                  thinking: newThinking,
+                  actions: newActions,
                   steps: event.step,
                 }
               : msg
-          )
-        );
+          );
+          console.log('[Chat] Updated messages:', updated);
+          return updated;
+        });
       },
       // onDone
       (event: DoneEvent) => {
@@ -185,16 +209,26 @@ function ChatComponent() {
 
   // 重置对话
   const handleReset = async () => {
-    await resetChat();
+    // 取消正在进行的流式请求
+    if (currentStream) {
+      currentStream.close();
+      setCurrentStream(null);
+    }
+
+    // 重置所有状态
+    setLoading(false);
     setMessages([]);
     setError(null);
+
+    // 调用后端重置
+    await resetChat();
   };
 
 
   return (
     <div className="h-full flex items-center justify-center p-4 gap-4">
       {/* Chatbox */}
-      <div className="flex flex-col w-full max-w-2xl h-[600px] border border-gray-200 dark:border-gray-700 rounded-2xl shadow-lg bg-white dark:bg-gray-800">
+      <div className="flex flex-col w-full max-w-2xl h-[750px] border border-gray-200 dark:border-gray-700 rounded-2xl shadow-lg bg-white dark:bg-gray-800">
         {/* 头部 */}
         <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700 rounded-t-2xl">
           <h1 className="text-xl font-semibold">AutoGLM Chat</h1>
@@ -202,18 +236,18 @@ function ChatComponent() {
             {!initialized ? (
               <button
                 onClick={handleInit}
-                className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
+                className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors flex items-center justify-center"
               >
                 初始化 Agent
               </button>
             ) : (
-              <span className="px-3 py-1 bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200 rounded-full text-sm">
+              <span className="px-3 py-1 bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200 rounded-full text-sm flex items-center justify-center">
                 已初始化
               </span>
             )}
             <button
               onClick={handleReset}
-              className="px-4 py-2 bg-gray-200 dark:bg-gray-700 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
+              className="px-4 py-2 bg-gray-200 dark:bg-gray-700 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors flex items-center justify-center"
             >
               重置
             </button>
@@ -300,14 +334,6 @@ function ChatComponent() {
             </div>
           ))}
 
-          {loading && (
-            <div className="flex justify-start">
-              <div className="text-sm text-gray-500 dark:text-gray-400 animate-pulse">
-                正在执行...
-              </div>
-            </div>
-          )}
-
           <div ref={messagesEndRef} />
         </div>
 
@@ -325,7 +351,7 @@ function ChatComponent() {
             <button
               onClick={handleSend}
               disabled={!initialized || loading || !input.trim()}
-              className="px-6 py-3 bg-blue-500 text-white rounded-xl hover:bg-blue-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="px-6 py-3 bg-blue-500 text-white rounded-xl hover:bg-blue-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
             >
               发送
             </button>
@@ -334,7 +360,7 @@ function ChatComponent() {
       </div>
 
       {/* Screenshot Display */}
-      <div className="flex flex-col w-full max-w-xs h-[600px] border border-gray-200 dark:border-gray-700 rounded-2xl shadow-lg bg-white dark:bg-gray-800 overflow-hidden">
+      <div className="flex flex-col w-full max-w-xs h-[750px] border border-gray-200 dark:border-gray-700 rounded-2xl shadow-lg bg-white dark:bg-gray-800 overflow-hidden">
         <div className="flex-1 flex items-center justify-center p-4 overflow-auto bg-gray-50 dark:bg-gray-900">
           {screenshot && screenshot.success ? (
             <div className="relative w-full h-full flex items-center justify-center">

@@ -39,7 +39,7 @@ function Footer() {
           </a>
         </div>
         <div className="text-center">
-          欢迎去{' '}
+          欢迎{' '}
           <a
             href="https://github.com/suyiiyii/AutoGLM-GUI"
             target="_blank"
