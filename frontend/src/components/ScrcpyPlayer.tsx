@@ -9,7 +9,6 @@ import {
   sendTouchMove,
   sendTouchUp,
 } from '../api';
-const MIN_SWIPE_DISTANCE = 3; // Minimum distance in pixels to qualify as a swipe
 const WHEEL_DELAY_MS = 400; // Debounce delay for wheel events
 const MOTION_THROTTLE_MS = 50; // Throttle for motion events (50ms = 20 events/sec)
 interface ScrcpyPlayerProps {
@@ -38,7 +37,7 @@ export function ScrcpyPlayer({
   onStreamReady,
 }: ScrcpyPlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
-  const jmuxerRef = useRef<any>(null);
+  const jmuxerRef = useRef<unknown>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const deviceIdRef = useRef<string>(deviceId); // Store current deviceId for reconnect logic
   const [status, setStatus] = useState<
@@ -208,7 +207,9 @@ export function ScrcpyPlayer({
 
     try {
       await sendTouchDown(actualDeviceX, actualDeviceY, deviceId);
-      console.log(`[Touch] DOWN: (${actualDeviceX}, ${actualDeviceY}) for device ${deviceId}`);
+      console.log(
+        `[Touch] DOWN: (${actualDeviceX}, ${actualDeviceY}) for device ${deviceId}`
+      );
     } catch (error) {
       console.error('[Touch] DOWN failed:', error);
     }
@@ -337,7 +338,9 @@ export function ScrcpyPlayer({
 
     try {
       await sendTouchUp(actualDeviceX, actualDeviceY, deviceId);
-      console.log(`[Touch] UP: (${actualDeviceX}, ${actualDeviceY}) for device ${deviceId}`);
+      console.log(
+        `[Touch] UP: (${actualDeviceX}, ${actualDeviceY}) for device ${deviceId}`
+      );
       onTapSuccess?.();
     } catch (error) {
       console.error('[Touch] UP failed:', error);
@@ -529,78 +532,6 @@ export function ScrcpyPlayer({
   };
 
   /**
-   * Execute swipe gesture
-   */
-  const executeSwipe = async (
-    start: { x: number; y: number; time: number },
-    end: { x: number; y: number; time: number }
-  ) => {
-    if (!videoRef.current || !deviceResolution) {
-      console.warn(
-        '[ScrcpyPlayer] Cannot execute swipe: video or device resolution not available'
-      );
-      return;
-    }
-
-    const rect = videoRef.current.getBoundingClientRect();
-
-    // Convert start and end coordinates to device coordinates
-    const startDeviceCoords = getDeviceCoordinates(
-      start.x - rect.left,
-      start.y - rect.top,
-      videoRef.current
-    );
-    const endDeviceCoords = getDeviceCoordinates(
-      end.x - rect.left,
-      end.y - rect.top,
-      videoRef.current
-    );
-
-    if (!startDeviceCoords || !endDeviceCoords) {
-      console.warn(
-        '[ScrcpyPlayer] Cannot execute swipe: coordinate transformation failed'
-      );
-      return;
-    }
-
-    // Scale from video stream resolution to device actual resolution
-    const videoWidth = videoRef.current.videoWidth;
-    const videoHeight = videoRef.current.videoHeight;
-    const scaleX = deviceResolution.width / videoWidth;
-    const scaleY = deviceResolution.height / videoHeight;
-
-    const actualStartX = Math.round(startDeviceCoords.x * scaleX);
-    const actualStartY = Math.round(startDeviceCoords.y * scaleY);
-    const actualEndX = Math.round(endDeviceCoords.x * scaleX);
-    const actualEndY = Math.round(endDeviceCoords.y * scaleY);
-
-    // Calculate duration based on distance and time
-    const distance = Math.sqrt(
-      Math.pow(end.x - start.x, 2) + Math.pow(end.y - start.y, 2)
-    );
-    const durationMs = Math.round(Math.min(Math.max(300, distance * 2), 1000));
-
-    try {
-      const result = await sendSwipe(
-        actualStartX,
-        actualStartY,
-        actualEndX,
-        actualEndY,
-        durationMs,
-        deviceId
-      );
-
-      if (result.success) {
-        onSwipeSuccess?.();
-      } else {
-        onSwipeError?.(result.error || 'Swipe failed');
-      }
-    } catch (error) {
-      onSwipeError?.(String(error));
-    }
-  };
-
-  /**
    * Handle video click event
    */
   const handleVideoClick = async (
@@ -768,7 +699,7 @@ export function ScrcpyPlayer({
           fps: 30,
           debug: false,
           clearBuffer: true, // ✅ Clear buffer on errors to prevent buildup
-          onError: (error: any) => {
+          onError: (error: { name: string; error: string }) => {
             console.error('[jMuxer] Decoder error:', error);
 
             // ✅ On buffer error, immediately reconnect
@@ -800,7 +731,9 @@ export function ScrcpyPlayer({
                 if (connectFn) {
                   setTimeout(() => {
                     if (deviceIdRef.current === errorDeviceId) {
-                      connectFn!();
+                      if (connectFn) {
+                        connectFn();
+                      }
                     } else {
                       console.log(
                         `[jMuxer] Device changed (${errorDeviceId} -> ${deviceIdRef.current}), skip reconnect`
@@ -1004,7 +937,7 @@ export function ScrcpyPlayer({
         jmuxerRef.current = null;
       }
     };
-  }, [deviceId]); // Re-connect when device changes
+  }, [deviceId, onStreamReady]);
 
   return (
     <div
@@ -1042,7 +975,9 @@ export function ScrcpyPlayer({
 
                 try {
                   await sendTouchUp(x, y, deviceId);
-                  console.log(`[Touch] UP (mouse leave) for device ${deviceId}`);
+                  console.log(
+                    `[Touch] UP (mouse leave) for device ${deviceId}`
+                  );
                 } catch (error) {
                   console.error('[Touch] UP (mouse leave) failed:', error);
                 }

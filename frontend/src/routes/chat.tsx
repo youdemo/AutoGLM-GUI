@@ -27,7 +27,7 @@ interface Message {
   steps?: number;
   success?: boolean;
   thinking?: string[]; // 存储每步的思考过程
-  actions?: any[]; // 存储每步的动作
+  actions?: Record<string, unknown>[]; // 存储每步的动作
   isStreaming?: boolean; // 标记是否正在流式接收
 }
 
@@ -37,8 +37,8 @@ interface DeviceState {
   loading: boolean;
   error: string | null;
   initialized: boolean;
-  chatStream: { close: () => void } | null;  // 聊天流（设备切换时不中断）
-  videoStream: { close: () => void } | null;  // 视频流（设备切换时中断）
+  chatStream: { close: () => void } | null; // 聊天流（设备切换时不中断）
+  videoStream: { close: () => void } | null; // 视频流（设备切换时中断）
   screenshot: ScreenshotResponse | null;
   useVideoStream: boolean;
   videoStreamFailed: boolean;
@@ -69,7 +69,7 @@ function ChatComponent() {
 
   // 用于追踪当前流式消息的最新数据，避免状态更新竞态
   const currentThinkingRef = useRef<string[]>([]);
-  const currentActionsRef = useRef<any[]>([]);
+  const currentActionsRef = useRef<Record<string, unknown>[]>([]);
 
   // 获取当前设备的状态（如果不存在则返回默认值）
   const getCurrentDeviceState = (): DeviceState => {
@@ -171,7 +171,7 @@ function ChatComponent() {
 
     // 检查是否选中了设备
     if (!currentDeviceId) {
-      alert('请先选择一个设备');
+      window.alert('请先选择一个设备');
       return;
     }
 
@@ -407,7 +407,7 @@ function ChatComponent() {
                     if (currentDeviceId) {
                       handleInit(currentDeviceId);
                     } else {
-                      alert('请先选择一个设备');
+                      window.alert('请先选择一个设备');
                     }
                   }}
                   className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"

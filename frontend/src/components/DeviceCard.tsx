@@ -53,9 +53,7 @@ export function DeviceCard({
             {/* 设备 ID */}
             <div
               className={`text-xs truncate ${
-                isActive
-                  ? 'text-blue-100'
-                  : 'text-gray-500 dark:text-gray-400'
+                isActive ? 'text-blue-100' : 'text-gray-500 dark:text-gray-400'
               }`}
             >
               {id}
@@ -72,9 +70,7 @@ export function DeviceCard({
           >
             <svg
               className={`w-3 h-3 ${
-                isActive
-                  ? 'text-white'
-                  : 'text-green-600 dark:text-green-400'
+                isActive ? 'text-white' : 'text-green-600 dark:text-green-400'
               }`}
               fill="none"
               viewBox="0 0 24 24"

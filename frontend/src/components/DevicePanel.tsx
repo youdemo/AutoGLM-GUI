@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useState } from 'react';
+import React, { useRef, useEffect } from 'react';
 import { ScrcpyPlayer } from './ScrcpyPlayer';
 import type { ScreenshotResponse } from '../api';
 import { getScreenshot } from '../api';
@@ -11,7 +11,7 @@ interface Message {
   steps?: number;
   success?: boolean;
   thinking?: string[];
-  actions?: any[];
+  actions?: Record<string, unknown>[];
   isStreaming?: boolean;
 }
 
@@ -20,8 +20,8 @@ interface DeviceState {
   loading: boolean;
   error: string | null;
   initialized: boolean;
-  chatStream: { close: () => void } | null;  // 聊天流
-  videoStream: { close: () => void } | null;  // 视频流
+  chatStream: { close: () => void } | null; // 聊天流
+  videoStream: { close: () => void } | null; // 视频流
   screenshot: ScreenshotResponse | null;
   useVideoStream: boolean;
   videoStreamFailed: boolean;
@@ -96,7 +96,12 @@ export function DevicePanel({
     const interval = setInterval(fetchScreenshot, 500);
 
     return () => clearInterval(interval);
-  }, [deviceId, deviceState.videoStreamFailed, deviceState.displayMode]);
+  }, [
+    deviceId,
+    deviceState.videoStreamFailed,
+    deviceState.displayMode,
+    updateDeviceState,
+  ]);
 
   const handleInputKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
     if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
@@ -109,6 +114,10 @@ export function DevicePanel({
   const handleVideoStreamReady = (stream: { close: () => void } | null) => {
     updateDeviceState(deviceId, { videoStream: stream });
   };
+
+  useEffect(() => {
+    // Ensure handleVideoStreamReady has access to latest updateDeviceState
+  }, [updateDeviceState]);
 
   return (
     <div className="flex-1 flex gap-4 p-4 items-center justify-center">
@@ -236,9 +245,7 @@ export function DevicePanel({
               onChange={e => onInputChange(e.target.value)}
               onKeyDown={handleInputKeyDown}
               placeholder={
-                !deviceState.initialized
-                  ? '请先初始化设备'
-                  : '输入任务描述...'
+                !deviceState.initialized ? '请先初始化设备' : '输入任务描述...'
               }
               disabled={deviceState.loading}
               className="flex-1 px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
@@ -259,9 +266,7 @@ export function DevicePanel({
         {/* Mode Switch Button */}
         <div className="absolute top-2 right-2 z-10 flex gap-1 bg-black/70 rounded-lg p-1">
           <button
-            onClick={() =>
-              updateDeviceState(deviceId, { displayMode: 'auto' })
-            }
+            onClick={() => updateDeviceState(deviceId, { displayMode: 'auto' })}
             className={`px-3 py-1 text-xs rounded transition-colors ${
               deviceState.displayMode === 'auto'
                 ? 'bg-blue-500 text-white'

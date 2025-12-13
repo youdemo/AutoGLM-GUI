@@ -62,7 +62,7 @@ export interface StepEvent {
   type: 'step';
   step: number;
   thinking: string;
-  action: Record<string, any>;
+  action: Record<string, unknown>;
   success: boolean;
   finished: boolean;
 }
@@ -183,7 +183,7 @@ export function sendMessageStream(
         throw new Error(`HTTP error! status: ${response.status}`);
       }
 
-      const reader = response.body!.getReader();
+      const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let buffer = '';
       let eventType = 'message'; // 移到外部，跨 chunks 保持状态
