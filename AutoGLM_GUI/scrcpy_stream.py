@@ -307,11 +307,14 @@ class ScrcpyStreamer:
 
         raise ConnectionError("Failed to connect to scrcpy server")
 
-    def _find_nal_units(self, data: bytes) -> list[tuple[int, int, int]]:
+    def _find_nal_units(
+        self, data: bytes
+    ) -> list[tuple[int, int, int, bool]]:
         """Find NAL units in H.264 data.
 
         Returns:
-            List of (start_pos, nal_type, nal_size) tuples
+            List of (start_pos, nal_type, nal_size, is_complete) tuples
+            is_complete=False if NAL unit extends to chunk boundary (may be truncated)
         """
         nal_units = []
         i = 0
@@ -336,18 +339,22 @@ class ScrcpyStreamer:
 
             # Find next start code to determine NAL unit size
             next_start = nal_start + 1
+            found_next = False
             while next_start < data_len - 3:
                 if (
                     data[next_start : next_start + 4] == b"\x00\x00\x00\x01"
                     or data[next_start : next_start + 3] == b"\x00\x00\x01"
                 ):
+                    found_next = True
                     break
                 next_start += 1
             else:
                 next_start = data_len
 
             nal_size = next_start - i
-            nal_units.append((i, nal_type, nal_size))
+            # NAL unit is complete only if we found the next start code
+            is_complete = found_next
+            nal_units.append((i, nal_type, nal_size, is_complete))
 
             i = next_start
 
@@ -356,13 +363,13 @@ class ScrcpyStreamer:
     def _cache_nal_units(self, data: bytes) -> None:
         """Parse and cache INITIAL complete NAL units (SPS, PPS, IDR).
 
-        IMPORTANT: Only caches complete SPS/PPS from stream start.
-        NAL units may be truncated across chunks, so we validate minimum sizes
-        and lock the cache after getting complete initial parameters.
+        IMPORTANT: Caches NAL units with size validation.
+        For small NAL units (SPS/PPS), we cache even if at chunk boundary.
+        For large NAL units (IDR), we require minimum size to ensure completeness.
         """
         nal_units = self._find_nal_units(data)
 
-        for start, nal_type, size in nal_units:
+        for start, nal_type, size, is_complete in nal_units:
             nal_data = data[start : start + size]
 
             if nal_type == 7:  # SPS
@@ -375,11 +382,11 @@ class ScrcpyStreamer:
                             f"{b:02x}" for b in nal_data[: min(12, len(nal_data))]
                         )
                         print(
-                            f"[ScrcpyStreamer] ✓ Cached complete SPS ({size} bytes): {hex_preview}..."
+                            f"[ScrcpyStreamer] ✓ Cached SPS ({size} bytes, complete={is_complete}): {hex_preview}..."
                         )
                     elif size < 10:
                         print(
-                            f"[ScrcpyStreamer] ✗ Skipped truncated SPS ({size} bytes, too short)"
+                            f"[ScrcpyStreamer] ✗ Skipped short SPS ({size} bytes)"
                         )
 
             elif nal_type == 8:  # PPS
@@ -392,24 +399,33 @@ class ScrcpyStreamer:
                             f"{b:02x}" for b in nal_data[: min(12, len(nal_data))]
                         )
                         print(
-                            f"[ScrcpyStreamer] ✓ Cached complete PPS ({size} bytes): {hex_preview}..."
+                            f"[ScrcpyStreamer] ✓ Cached PPS ({size} bytes, complete={is_complete}): {hex_preview}..."
                         )
                     elif size < 6:
                         print(
-                            f"[ScrcpyStreamer] ✗ Skipped truncated PPS ({size} bytes, too short)"
+                            f"[ScrcpyStreamer] ✗ Skipped short PPS ({size} bytes)"
                         )
 
             elif nal_type == 5:  # IDR frame
-                # ✅ ALWAYS update IDR to keep the LATEST frame
-                # This gives better UX on reconnect (recent content, not stale startup frame)
-                if self.cached_sps and self.cached_pps:
+                # CRITICAL: Only cache COMPLETE IDR frames
+                # Incomplete IDR frames cause "error while decoding MB" errors
+                if self.cached_sps and self.cached_pps and is_complete and size >= 1024:
                     is_first = self.cached_idr is None
                     self.cached_idr = nal_data
                     if is_first:
                         print(
-                            f"[ScrcpyStreamer] ✓ Cached initial IDR frame ({size} bytes)"
+                            f"[ScrcpyStreamer] ✓ Cached COMPLETE IDR frame ({size} bytes)"
                         )
                     # Don't log every IDR update (too verbose)
+                elif not is_complete:
+                    if size > 1024:  # Only log if it's a large incomplete IDR
+                        print(
+                            f"[ScrcpyStreamer] ⚠ Skipped INCOMPLETE IDR ({size} bytes, extends to chunk boundary)"
+                        )
+                elif size < 1024:
+                    print(
+                        f"[ScrcpyStreamer] ✗ Skipped small IDR ({size} bytes)"
+                    )
 
         # Lock SPS/PPS once we have complete initial parameters
         if self.cached_sps and self.cached_pps and not self.sps_pps_locked:
@@ -435,7 +451,9 @@ class ScrcpyStreamer:
 
         # Find all IDR frames
         idr_positions = [
-            (start, size) for start, nal_type, size in nal_units if nal_type == 5
+            (start, size)
+            for start, nal_type, size, _ in nal_units
+            if nal_type == 5
         ]
 
         if not idr_positions:
@@ -497,11 +515,14 @@ class ScrcpyStreamer:
             return init_data
         return None
 
-    async def read_h264_chunk(self) -> bytes:
+    async def read_h264_chunk(self, auto_cache: bool = True) -> bytes:
         """Read H.264 data chunk from socket.
 
+        Args:
+            auto_cache: If True, automatically cache SPS/PPS/IDR from this chunk
+
         Returns:
-            bytes: Raw H.264 data with SPS/PPS prepended to IDR frames
+            bytes: Raw H.264 data
 
         Raises:
             ConnectionError: If socket is closed or error occurs
@@ -524,9 +545,9 @@ class ScrcpyStreamer:
                     f"[ScrcpyStreamer] Large chunk received: {len(data) / 1024:.1f} KB"
                 )
 
-            # Cache INITIAL complete SPS/PPS/IDR for future use
-            # (Later chunks may have truncated NAL units, so we only cache once)
-            self._cache_nal_units(data)
+            # Optionally cache SPS/PPS/IDR from this chunk
+            if auto_cache:
+                self._cache_nal_units(data)
 
             # NOTE: We don't automatically prepend SPS/PPS here because:
             # 1. NAL units may be truncated across chunks
