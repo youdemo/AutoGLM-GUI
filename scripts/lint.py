@@ -7,6 +7,7 @@ AutoGLM-GUI 统一 Lint 脚本
 import argparse
 import subprocess
 import sys
+import platform
 from pathlib import Path
 from typing import List, Optional
 
@@ -27,10 +28,18 @@ class LintResult:
 class AutoGLMLinter:
     """AutoGLM-GUI 统一代码检查器"""
 
+    # Windows 上需要通过 shell 执行的 Node.js 包管理器命令
+    _NODE_PACKAGE_MANAGERS = frozenset(["pnpm", "npm", "yarn", "npx"])
+
     def __init__(self, root_dir: Path):
         self.root_dir = root_dir
         self.frontend_dir = root_dir / "frontend"
         self.backend_dir = root_dir
+        self._platform = platform.system()
+
+    def _should_use_shell(self, cmd: List[str]) -> bool:
+        """判断命令是否需要通过 shell 执行（Windows 平台的 Node.js 工具）"""
+        return self._platform == "Windows" and cmd[0] in self._NODE_PACKAGE_MANAGERS
 
     def run_command(
         self,
@@ -49,6 +58,7 @@ class AutoGLMLinter:
                 capture_output=capture_output,
                 text=True,
                 timeout=300,  # 5分钟超时
+                shell=self._should_use_shell(cmd),
             )
             return LintResult(
                 name=name,
