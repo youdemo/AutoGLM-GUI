@@ -45,3 +45,12 @@ mac:
   category: public.app-category.developer-tools
   # 开发阶段不签名，使用 xattr -cr 移除隔离属性
   identity: null
+
+linux:
+  target:
+    - AppImage    # 最通用的格式，无需安装
+    - deb         # Debian/Ubuntu 系统
+    - tar.gz      # 便携版
+  category: Development
+  icon: icon.png
+  maintainer: suyiiyii <suyiiyii@gmail.com>

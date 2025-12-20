@@ -22,6 +22,7 @@ from pathlib import Path
 ADB_URLS = {
     "windows": "https://dl.google.com/android/repository/platform-tools-latest-windows.zip",
     "darwin": "https://dl.google.com/android/repository/platform-tools-latest-darwin.zip",
+    "linux": "https://dl.google.com/android/repository/platform-tools-latest-linux.zip",
 }
 
 

@@ -3,12 +3,18 @@
   "version": "0.5.0",
   "description": "AutoGLM GUI - AI-powered Android automation desktop app",
   "main": "main.js",
+  "homepage": "https://github.com/suyiiyii/AutoGLM-GUI",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/suyiiyii/AutoGLM-GUI.git"
+  },
   "scripts": {
     "start": "electron .",
     "dev": "electron . --dev",
     "build": "electron-builder",
     "build:win": "electron-builder --win",
-    "build:mac": "electron-builder --mac"
+    "build:mac": "electron-builder --mac",
+    "build:linux": "electron-builder --linux"
   },
   "keywords": [
     "autoglm",
@@ -16,7 +22,10 @@
     "automation",
     "electron"
   ],
-  "author": "AutoGLM Team",
+  "author": {
+    "name": "suyiiyii",
+    "email": "suyiiyii@gmail.com"
+  },
   "license": "MIT",
   "devDependencies": {
     "electron": "^28.0.0",

@@ -186,9 +186,11 @@ class ElectronBuilder:
             platforms.append("windows")
         elif self.is_macos:
             platforms.extend(["darwin", "windows"])  # macOS 上构建两个平台
+        elif self.is_linux:
+            platforms.append("linux")  # Linux 下载自己的 ADB
         else:
-            print_warning("Linux 平台暂不支持，跳过 Windows ADB 下载")
-            platforms.append("darwin")
+            print_warning(f"未知平台 {self.platform}，跳过 ADB 下载")
+            return True
 
         # 下载 ADB
         for plat in platforms:

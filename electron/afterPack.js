@@ -20,6 +20,8 @@ exports.default = async function(context) {
     resourcesPath = path.join(appOutDir, `${appName}.app`, 'Contents', 'Resources');
   } else if (electronPlatformName === 'win32') {
     resourcesPath = path.join(appOutDir, 'resources');
+  } else if (electronPlatformName === 'linux') {
+    resourcesPath = path.join(appOutDir, 'resources');
   } else {
     console.log('Unsupported platform:', electronPlatformName);
     return;
@@ -42,7 +44,9 @@ exports.default = async function(context) {
   }
 
   // 设置 ADB 工具权限
-  const platformName = electronPlatformName === 'win32' ? 'windows' : 'darwin';
+  const platformName = electronPlatformName === 'win32' ? 'windows'
+                     : electronPlatformName === 'linux' ? 'linux'
+                     : 'darwin';
   const adbDir = path.join(resourcesPath, 'adb', platformName, 'platform-tools');
 
   if (fs.existsSync(adbDir)) {
