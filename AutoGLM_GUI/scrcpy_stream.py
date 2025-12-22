@@ -1,20 +1,47 @@
-"""scrcpy video streaming implementation."""
+"""Scrcpy video streaming implementation (ya-webadb protocol aligned)."""
 
 import asyncio
 import os
 import socket
 import subprocess
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from AutoGLM_GUI.adb_plus import check_device_available
 from AutoGLM_GUI.logger import logger
 from AutoGLM_GUI.platform_utils import is_windows, run_cmd_silently, spawn_process
+from AutoGLM_GUI.scrcpy_protocol import (
+    PTS_CONFIG,
+    PTS_KEYFRAME,
+    SCRCPY_CODEC_NAME_TO_ID,
+    SCRCPY_KNOWN_CODECS,
+    ScrcpyMediaStreamPacket,
+    ScrcpyVideoStreamMetadata,
+    ScrcpyVideoStreamOptions,
+)
+
+
+@dataclass
+class ScrcpyServerOptions:
+    max_size: int
+    bit_rate: int
+    max_fps: int
+    tunnel_forward: bool
+    audio: bool
+    control: bool
+    cleanup: bool
+    video_codec: str
+    send_frame_meta: bool
+    send_device_meta: bool
+    send_codec_meta: bool
+    send_dummy_byte: bool
+    video_codec_options: str | None
 
 
 class ScrcpyStreamer:
-    """Manages scrcpy server lifecycle and H.264 video streaming."""
+    """Manages scrcpy server lifecycle and video stream parsing."""
 
     def __init__(
         self,
@@ -23,6 +50,7 @@ class ScrcpyStreamer:
         bit_rate: int = 1_000_000,
         port: int = 27183,
         idr_interval_s: int = 1,
+        stream_options: ScrcpyVideoStreamOptions | None = None,
     ):
         """Initialize ScrcpyStreamer.
 
@@ -32,28 +60,22 @@ class ScrcpyStreamer:
             bit_rate: Video bitrate in bps
             port: TCP port for scrcpy socket
             idr_interval_s: Seconds between IDR frames (controls GOP length)
+            stream_options: Scrcpy protocol options for metadata/frame parsing
         """
         self.device_id = device_id
         self.max_size = max_size
         self.bit_rate = bit_rate
         self.port = port
         self.idr_interval_s = idr_interval_s
+        self.stream_options = stream_options or ScrcpyVideoStreamOptions()
 
         self.scrcpy_process: Any | None = None
         self.tcp_socket: socket.socket | None = None
         self.forward_cleanup_needed = False
 
-        # H.264 parameter sets cache (for new connections to join mid-stream)
-        # IMPORTANT: Only cache INITIAL complete SPS/PPS from stream start
-        # Later SPS/PPS may be truncated across chunks
-        self.cached_sps: bytes | None = None
-        self.cached_pps: bytes | None = None
-        self.cached_idr: bytes | None = None  # Last IDR frame for immediate playback
-        self.sps_pps_locked = False  # Lock SPS/PPS after initial complete capture
-        # Note: IDR is NOT locked - we keep updating to the latest frame
-
-        # NAL unit reading buffer (for read_nal_unit method)
-        self._nal_read_buffer = bytearray()
+        self._read_buffer = bytearray()
+        self._metadata: ScrcpyVideoStreamMetadata | None = None
+        self._dummy_byte_skipped = False
 
         # Find scrcpy-server location
         self.scrcpy_server_path = self._find_scrcpy_server()
@@ -98,9 +120,10 @@ class ScrcpyStreamer:
 
     async def start(self) -> None:
         """Start scrcpy server and establish connection."""
-        # Clear NAL reading buffer to ensure clean state
-        self._nal_read_buffer.clear()
-        logger.debug("Cleared NAL read buffer")
+        self._read_buffer.clear()
+        self._metadata = None
+        self._dummy_byte_skipped = False
+        logger.debug("Reset stream state")
 
         try:
             # 0. Check device availability first
@@ -112,19 +135,19 @@ class ScrcpyStreamer:
             logger.info("Cleaning up existing scrcpy processes...")
             await self._cleanup_existing_server()
 
-            # 1. Push scrcpy-server to device
+            # 2. Push scrcpy-server to device
             logger.info("Pushing server to device...")
             await self._push_server()
 
-            # 2. Setup port forwarding
+            # 3. Setup port forwarding
             logger.info(f"Setting up port forwarding on port {self.port}...")
             await self._setup_port_forward()
 
-            # 3. Start scrcpy server
+            # 4. Start scrcpy server
             logger.info("Starting scrcpy server...")
             await self._start_server()
 
-            # 4. Connect TCP socket
+            # 5. Connect TCP socket
             logger.info("Connecting to TCP socket...")
             await self._connect_socket()
             logger.info("Successfully connected!")
@@ -155,7 +178,7 @@ class ScrcpyStreamer:
         cmd_remove_forward = cmd_base + ["forward", "--remove", f"tcp:{self.port}"]
         await run_cmd_silently(cmd_remove_forward)
 
-        # Wait longer for resources to be released
+        # Wait for resources to be released
         logger.debug("Waiting for cleanup to complete...")
         await asyncio.sleep(2)
 
@@ -178,10 +201,30 @@ class ScrcpyStreamer:
         await run_cmd_silently(cmd)
         self.forward_cleanup_needed = True
 
+    def _build_server_options(self) -> ScrcpyServerOptions:
+        codec_options = f"i-frame-interval={self.idr_interval_s}"
+        return ScrcpyServerOptions(
+            max_size=self.max_size,
+            bit_rate=self.bit_rate,
+            max_fps=20,
+            tunnel_forward=True,
+            audio=False,
+            control=False,
+            cleanup=False,
+            video_codec=self.stream_options.video_codec,
+            send_frame_meta=self.stream_options.send_frame_meta,
+            send_device_meta=self.stream_options.send_device_meta,
+            send_codec_meta=self.stream_options.send_codec_meta,
+            send_dummy_byte=self.stream_options.send_dummy_byte,
+            video_codec_options=codec_options,
+        )
+
     async def _start_server(self) -> None:
         """Start scrcpy server on device with retry on address conflict."""
         max_retries = 3
         retry_delay = 2
+
+        options = self._build_server_options()
 
         for attempt in range(max_retries):
             cmd = ["adb"]
@@ -189,27 +232,29 @@ class ScrcpyStreamer:
                 cmd.extend(["-s", self.device_id])
 
             # Build server command
-            # Note: scrcpy 3.3+ uses different parameter format
             server_args = [
                 "shell",
                 "CLASSPATH=/data/local/tmp/scrcpy-server",
                 "app_process",
                 "/",
                 "com.genymobile.scrcpy.Server",
-                "3.3.3",  # scrcpy version - must match installed version
-                f"max_size={self.max_size}",
-                f"video_bit_rate={self.bit_rate}",
-                "max_fps=20",  # ✅ Limit to 20fps to reduce data volume
-                "tunnel_forward=true",
-                "audio=false",
-                "control=false",
-                "cleanup=false",
-                # Force I-frame (IDR) at fixed interval (GOP length) for reliable reconnection
-                f"video_codec_options=i-frame-interval={self.idr_interval_s}",
+                "3.3.3",
+                f"max_size={options.max_size}",
+                f"video_bit_rate={options.bit_rate}",
+                f"max_fps={options.max_fps}",
+                f"tunnel_forward={str(options.tunnel_forward).lower()}",
+                f"audio={str(options.audio).lower()}",
+                f"control={str(options.control).lower()}",
+                f"cleanup={str(options.cleanup).lower()}",
+                f"video_codec={options.video_codec}",
+                f"send_frame_meta={str(options.send_frame_meta).lower()}",
+                f"send_device_meta={str(options.send_device_meta).lower()}",
+                f"send_codec_meta={str(options.send_codec_meta).lower()}",
+                f"send_dummy_byte={str(options.send_dummy_byte).lower()}",
+                f"video_codec_options={options.video_codec_options}",
             ]
             cmd.extend(server_args)
 
-            # Capture stderr to see error messages
             self.scrcpy_process = await spawn_process(cmd, capture_output=True)
 
             # Wait for server to start
@@ -218,20 +263,15 @@ class ScrcpyStreamer:
             # Check if process is still running
             error_msg = None
             if is_windows():
-                # For Windows Popen, check returncode directly
                 if self.scrcpy_process.poll() is not None:
-                    # Process has exited
                     stdout, stderr = self.scrcpy_process.communicate()
                     error_msg = stderr.decode() if stderr else stdout.decode()
             else:
-                # For asyncio subprocess
                 if self.scrcpy_process.returncode is not None:
-                    # Process has exited
                     stdout, stderr = await self.scrcpy_process.communicate()
                     error_msg = stderr.decode() if stderr else stdout.decode()
 
             if error_msg is not None:
-                # Check if it's an "Address already in use" error
                 if "Address already in use" in error_msg:
                     if attempt < max_retries - 1:
                         logger.warning(
@@ -240,14 +280,11 @@ class ScrcpyStreamer:
                         await self._cleanup_existing_server()
                         await asyncio.sleep(retry_delay)
                         continue
-                    else:
-                        raise RuntimeError(
-                            f"scrcpy server failed after {max_retries} attempts: {error_msg}"
-                        )
-                else:
-                    raise RuntimeError(f"scrcpy server exited immediately: {error_msg}")
+                    raise RuntimeError(
+                        f"scrcpy server failed after {max_retries} attempts: {error_msg}"
+                    )
+                raise RuntimeError(f"scrcpy server exited immediately: {error_msg}")
 
-            # Server started successfully
             return
 
         raise RuntimeError("Failed to start scrcpy server after maximum retries")
@@ -257,299 +294,133 @@ class ScrcpyStreamer:
         self.tcp_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.tcp_socket.settimeout(5)
 
-        # Increase socket buffer size for high-resolution video
-        # Default is often 64KB, but complex frames can be 200-500KB
         try:
             self.tcp_socket.setsockopt(
                 socket.SOL_SOCKET, socket.SO_RCVBUF, 2 * 1024 * 1024
-            )  # 2MB
+            )
             logger.debug("Set socket receive buffer to 2MB")
         except OSError as e:
             logger.warning(f"Failed to set socket buffer size: {e}")
 
-        # Retry connection
         for _ in range(5):
             try:
                 self.tcp_socket.connect(("localhost", self.port))
-                self.tcp_socket.settimeout(None)  # Non-blocking for async
+                self.tcp_socket.settimeout(None)
                 return
             except (ConnectionRefusedError, OSError):
                 await asyncio.sleep(0.5)
 
         raise ConnectionError("Failed to connect to scrcpy server")
 
-    def _find_nal_units(self, data: bytes) -> list[tuple[int, int, int, bool]]:
-        """Find NAL units in H.264 data.
-
-        Returns:
-            List of (start_pos, nal_type, nal_size, is_complete) tuples
-            is_complete=False if NAL unit extends to chunk boundary (may be truncated)
-        """
-        nal_units = []
-        i = 0
-        data_len = len(data)
-
-        while i < data_len - 4:
-            # Look for start codes: 0x00 0x00 0x00 0x01 or 0x00 0x00 0x01
-            if data[i : i + 4] == b"\x00\x00\x00\x01":
-                start_code_len = 4
-            elif data[i : i + 3] == b"\x00\x00\x01":
-                start_code_len = 3
-            else:
-                i += 1
-                continue
-
-            # NAL unit type is in lower 5 bits of first byte after start code
-            nal_start = i + start_code_len
-            if nal_start >= data_len:
-                break
-
-            nal_type = data[nal_start] & 0x1F
-
-            # Find next start code to determine NAL unit size
-            next_start = nal_start + 1
-            found_next = False
-            while next_start < data_len - 3:
-                if (
-                    data[next_start : next_start + 4] == b"\x00\x00\x00\x01"
-                    or data[next_start : next_start + 3] == b"\x00\x00\x01"
-                ):
-                    found_next = True
-                    break
-                next_start += 1
-            else:
-                next_start = data_len
-
-            nal_size = next_start - i
-            # NAL unit is complete only if we found the next start code
-            is_complete = found_next
-            nal_units.append((i, nal_type, nal_size, is_complete))
-
-            i = next_start
-
-        return nal_units
-
-    def _cache_nal_units(self, data: bytes) -> None:
-        """Parse and cache INITIAL complete NAL units (SPS, PPS, IDR).
-
-        IMPORTANT: Caches NAL units with size validation.
-        For small NAL units (SPS/PPS), we cache even if at chunk boundary.
-        For large NAL units (IDR), we require minimum size to ensure completeness.
-        """
-        nal_units = self._find_nal_units(data)
-
-        for start, nal_type, size, is_complete in nal_units:
-            nal_data = data[start : start + size]
-
-            if nal_type == 7:  # SPS
-                # Only cache SPS if not yet locked
-                if not self.sps_pps_locked:
-                    # Validate: SPS should be at least 10 bytes
-                    if size >= 10 and not self.cached_sps:
-                        self.cached_sps = nal_data
-                        hex_preview = " ".join(
-                            f"{b:02x}" for b in nal_data[: min(12, len(nal_data))]
-                        )
-                        logger.debug(
-                            f"✓ Cached SPS ({size} bytes, complete={is_complete}): {hex_preview}..."
-                        )
-                    elif size < 10:
-                        logger.debug(f"✗ Skipped short SPS ({size} bytes)")
-
-            elif nal_type == 8:  # PPS
-                # Only cache PPS if not yet locked
-                if not self.sps_pps_locked:
-                    # Validate: PPS should be at least 6 bytes
-                    if size >= 6 and not self.cached_pps:
-                        self.cached_pps = nal_data
-                        hex_preview = " ".join(
-                            f"{b:02x}" for b in nal_data[: min(12, len(nal_data))]
-                        )
-                        logger.debug(
-                            f"✓ Cached PPS ({size} bytes, complete={is_complete}): {hex_preview}..."
-                        )
-                    elif size < 6:
-                        logger.debug(f"✗ Skipped short PPS ({size} bytes)")
-
-            elif nal_type == 5:  # IDR frame
-                # Cache IDR if it's large enough (size check is sufficient)
-                # Note: When called from read_nal_unit(), the NAL is guaranteed complete
-                # because we extract it between two start codes. The is_complete flag
-                # is only False because the NAL is isolated (no next start code in buffer).
-                if self.cached_sps and self.cached_pps and size >= 1024:
-                    is_first = self.cached_idr is None
-                    self.cached_idr = nal_data
-                    if is_first:
-                        logger.debug(f"✓ Cached IDR frame ({size} bytes)")
-                    # Don't log every IDR update (too verbose)
-                elif size < 1024:
-                    logger.debug(
-                        f"✗ Skipped small IDR ({size} bytes, likely incomplete)"
-                    )
-
-        # Lock SPS/PPS once we have complete initial parameters
-        if self.cached_sps and self.cached_pps and not self.sps_pps_locked:
-            self.sps_pps_locked = True
-            logger.debug("🔒 SPS/PPS locked (IDR will continue updating)")
-
-    def get_initialization_data(self) -> bytes | None:
-        """Get cached SPS/PPS/IDR for initializing new connections.
-
-        Returns:
-            Concatenated SPS + PPS + IDR, or None if not available
-        """
-        if self.cached_sps and self.cached_pps:
-            # Return SPS + PPS (+ IDR if available)
-            init_data = self.cached_sps + self.cached_pps
-            if self.cached_idr:
-                init_data += self.cached_idr
-
-            # Validate data integrity
-            logger.debug("Returning init data:")
-            logger.debug(
-                f"  - SPS: {len(self.cached_sps)} bytes, starts with {' '.join(f'{b:02x}' for b in self.cached_sps[:8])}"
-            )
-            logger.debug(
-                f"  - PPS: {len(self.cached_pps)} bytes, starts with {' '.join(f'{b:02x}' for b in self.cached_pps[:8])}"
-            )
-            if self.cached_idr:
-                logger.debug(
-                    f"  - IDR: {len(self.cached_idr)} bytes, starts with {' '.join(f'{b:02x}' for b in self.cached_idr[:8])}"
-                )
-            logger.debug(f"  - Total: {len(init_data)} bytes")
-
-            return init_data
-        return None
-
-    async def read_h264_chunk(self, auto_cache: bool = True) -> bytes:
-        """Read H.264 data chunk from socket.
-
-        Args:
-            auto_cache: If True, automatically cache SPS/PPS/IDR from this chunk
-
-        Returns:
-            bytes: Raw H.264 data
-
-        Raises:
-            ConnectionError: If socket is closed or error occurs
-        """
+    async def _read_exactly(self, size: int) -> bytes:
         if not self.tcp_socket:
             raise ConnectionError("Socket not connected")
 
-        try:
-            # Use asyncio to make socket read non-blocking
-            # Read up to 512KB at once for high-quality frames
-            loop = asyncio.get_event_loop()
-            data = await loop.run_in_executor(None, self.tcp_socket.recv, 512 * 1024)
-
-            if not data:
+        while len(self._read_buffer) < size:
+            chunk = await asyncio.to_thread(
+                self.tcp_socket.recv, max(4096, size - len(self._read_buffer))
+            )
+            if not chunk:
                 raise ConnectionError("Socket closed by remote")
+            self._read_buffer.extend(chunk)
 
-            # Log large chunks (might indicate complex frames)
-            if len(data) > 200 * 1024:  # > 200KB
-                logger.debug(f"Large chunk received: {len(data) / 1024:.1f} KB")
+        data = bytes(self._read_buffer[:size])
+        del self._read_buffer[:size]
+        return data
 
-            # Optionally cache SPS/PPS/IDR from this chunk
-            if auto_cache:
-                self._cache_nal_units(data)
+    async def _read_u16(self) -> int:
+        return int.from_bytes(await self._read_exactly(2), "big")
 
-            # NOTE: We don't automatically prepend SPS/PPS here because:
-            # 1. NAL units may be truncated across chunks
-            # 2. Prepending truncated SPS/PPS causes decoding errors
-            # 3. Instead, we send cached complete SPS/PPS when new connections join
+    async def _read_u32(self) -> int:
+        return int.from_bytes(await self._read_exactly(4), "big")
 
-            return data
-        except ConnectionError:
-            raise
-        except Exception as e:
-            logger.error(
-                f"Unexpected error in read_h264_chunk: {type(e).__name__}: {e}"
+    async def _read_u64(self) -> int:
+        return int.from_bytes(await self._read_exactly(8), "big")
+
+    async def read_video_metadata(self) -> ScrcpyVideoStreamMetadata:
+        """Read and cache video stream metadata from scrcpy."""
+        if self._metadata is not None:
+            return self._metadata
+
+        if self.stream_options.send_dummy_byte and not self._dummy_byte_skipped:
+            await self._read_exactly(1)
+            self._dummy_byte_skipped = True
+
+        device_name = None
+        width = None
+        height = None
+        codec = SCRCPY_CODEC_NAME_TO_ID.get(
+            self.stream_options.video_codec, SCRCPY_CODEC_NAME_TO_ID["h264"]
+        )
+
+        if self.stream_options.send_device_meta:
+            raw_name = await self._read_exactly(64)
+            device_name = raw_name.split(b"\x00", 1)[0].decode(
+                "utf-8", errors="replace"
             )
-            raise ConnectionError(f"Failed to read from socket: {e}") from e
 
-    async def read_nal_unit(self, auto_cache: bool = True) -> bytes:
-        """Read one complete NAL unit from socket.
+        if self.stream_options.send_codec_meta:
+            codec_value = await self._read_u32()
+            if codec_value in SCRCPY_KNOWN_CODECS:
+                codec = codec_value
+                width = await self._read_u32()
+                height = await self._read_u32()
+            else:
+                # Legacy fallback: treat codec_value as width/height u16
+                width = (codec_value >> 16) & 0xFFFF
+                height = codec_value & 0xFFFF
+        else:
+            if self.stream_options.send_device_meta:
+                width = await self._read_u16()
+                height = await self._read_u16()
 
-        This method ensures each returned chunk is a complete, self-contained NAL unit.
-        WebSocket messages will have clear semantic boundaries (one message = one NAL unit).
+        self._metadata = ScrcpyVideoStreamMetadata(
+            device_name=device_name,
+            width=width,
+            height=height,
+            codec=codec,
+        )
+        return self._metadata
 
-        Args:
-            auto_cache: If True, automatically cache SPS/PPS/IDR from this NAL unit
+    async def read_media_packet(self) -> ScrcpyMediaStreamPacket:
+        """Read one Scrcpy media packet (configuration/data)."""
+        if not self.stream_options.send_frame_meta:
+            raise RuntimeError(
+                "send_frame_meta is disabled; packet parsing unavailable"
+            )
 
-        Returns:
-            bytes: Complete NAL unit (including start code)
+        if self._metadata is None:
+            await self.read_video_metadata()
 
-        Raises:
-            ConnectionError: If socket is closed or error occurs
-        """
-        if not self.tcp_socket:
-            raise ConnectionError("Socket not connected")
+        pts = await self._read_u64()
+        data_length = await self._read_u32()
+        payload = await self._read_exactly(data_length)
 
+        if pts == PTS_CONFIG:
+            return ScrcpyMediaStreamPacket(type="configuration", data=payload)
+
+        if pts & PTS_KEYFRAME:
+            return ScrcpyMediaStreamPacket(
+                type="data",
+                data=payload,
+                keyframe=True,
+                pts=pts & ~PTS_KEYFRAME,
+            )
+
+        return ScrcpyMediaStreamPacket(
+            type="data",
+            data=payload,
+            keyframe=False,
+            pts=pts,
+        )
+
+    async def iter_packets(self):
+        """Yield packets continuously from the scrcpy stream."""
         while True:
-            # Look for start codes in buffer
-            buffer = bytes(self._nal_read_buffer)
-            start_positions = []
-
-            # Find all start codes (0x00 0x00 0x00 0x01 or 0x00 0x00 0x01)
-            i = 0
-            while i < len(buffer) - 3:
-                if buffer[i] == 0x00 and buffer[i + 1] == 0x00:
-                    if buffer[i + 2] == 0x00 and buffer[i + 3] == 0x01:
-                        start_positions.append(i)
-                        i += 4
-                    elif buffer[i + 2] == 0x01:
-                        start_positions.append(i)
-                        i += 3
-                    else:
-                        i += 1
-                else:
-                    i += 1
-
-            # If we have at least 2 start codes, we can extract the first NAL unit
-            if len(start_positions) >= 2:
-                # Extract first complete NAL unit (from first start code to second start code)
-                nal_unit = buffer[start_positions[0] : start_positions[1]]
-
-                # Remove extracted NAL unit from buffer
-                self._nal_read_buffer = bytearray(buffer[start_positions[1] :])
-
-                # Cache parameter sets if enabled
-                if auto_cache:
-                    self._cache_nal_units(nal_unit)
-
-                return nal_unit
-
-            # Need more data - read from socket
-            try:
-                loop = asyncio.get_event_loop()
-                chunk = await loop.run_in_executor(
-                    None, self.tcp_socket.recv, 512 * 1024
-                )
-
-                if not chunk:
-                    # Socket closed - return any remaining buffered data as final NAL unit
-                    if len(self._nal_read_buffer) > 0:
-                        final_nal = bytes(self._nal_read_buffer)
-                        self._nal_read_buffer.clear()
-                        if auto_cache:
-                            self._cache_nal_units(final_nal)
-                        return final_nal
-                    raise ConnectionError("Socket closed by remote")
-
-                # Append new data to buffer
-                self._nal_read_buffer.extend(chunk)
-
-            except ConnectionError:
-                raise
-            except Exception as e:
-                logger.error(
-                    f"Unexpected error in read_nal_unit: {type(e).__name__}: {e}"
-                )
-                raise ConnectionError(f"Failed to read from socket: {e}") from e
+            yield await self.read_media_packet()
 
     def stop(self) -> None:
         """Stop scrcpy server and cleanup resources."""
-        # Close socket
         if self.tcp_socket:
             try:
                 self.tcp_socket.close()
@@ -557,7 +428,6 @@ class ScrcpyStreamer:
                 pass
             self.tcp_socket = None
 
-        # Kill server process
         if self.scrcpy_process:
             try:
                 self.scrcpy_process.terminate()
@@ -569,7 +439,6 @@ class ScrcpyStreamer:
                     pass
             self.scrcpy_process = None
 
-        # Remove port forwarding
         if self.forward_cleanup_needed:
             try:
                 cmd = ["adb"]
@@ -577,12 +446,14 @@ class ScrcpyStreamer:
                     cmd.extend(["-s", self.device_id])
                 cmd.extend(["forward", "--remove", f"tcp:{self.port}"])
                 subprocess.run(
-                    cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=2
+                    cmd,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    timeout=2,
                 )
             except Exception:
                 pass
             self.forward_cleanup_needed = False
 
     def __del__(self):
-        """Cleanup on destruction."""
         self.stop()

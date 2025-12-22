@@ -69,7 +69,7 @@ export function DevicePanel({
     'auto' | 'video' | 'screenshot'
   >('auto');
   const [feedbackMessage, setFeedbackMessage] = useState<string | null>(null);
-  const feedbackTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const feedbackTimeoutRef = useRef<number | null>(null);
 
   const showFeedback = (message: string, duration = 2000) => {
     if (feedbackTimeoutRef.current) {
@@ -89,7 +89,7 @@ export function DevicePanel({
     };
   }, []);
 
-  const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const controlsTimeoutRef = useRef<number | null>(null);
 
   const handleMouseEnter = () => {
     if (controlsTimeoutRef.current) {

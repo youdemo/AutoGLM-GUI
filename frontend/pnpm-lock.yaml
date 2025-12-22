@@ -38,15 +38,18 @@ importers:
       '@tanstack/router-plugin':
         specifier: ^1.140.0
         version: 1.140.0(@tanstack/react-router@1.140.0(react-dom@19.2.1(react@19.2.1))(react@19.2.1))(vite@7.2.7(@types/node@25.0.1)(jiti@2.6.1)(lightningcss@1.30.2)(tsx@4.21.0))
+      '@yume-chan/scrcpy':
+        specifier: ^1.1.0
+        version: 1.1.0
+      '@yume-chan/scrcpy-decoder-webcodecs':
+        specifier: ^1.1.0
+        version: 1.1.0
       class-variance-authority:
         specifier: ^0.7.1
         version: 0.7.1
       clsx:
         specifier: ^2.1.1
         version: 2.1.1
-      jmuxer:
-        specifier: ^2.1.0
-        version: 2.1.0
       lucide-react:
         specifier: ^0.562.0
         version: 0.562.0(react@19.2.1)
@@ -62,6 +65,9 @@ importers:
       redaxios:
         specifier: ^0.5.1
         version: 0.5.1
+      socket.io-client:
+        specifier: ^4.8.1
+        version: 4.8.1
       tailwind-merge:
         specifier: ^3.4.0
         version: 3.4.0
@@ -75,9 +81,6 @@ importers:
       '@eslint/js':
         specifier: ^9.39.1
         version: 9.39.1
-      '@types/jmuxer':
-        specifier: ^2.0.7
-        version: 2.0.7
       '@types/react':
         specifier: ^19.0.8
         version: 19.2.7
@@ -1103,6 +1106,9 @@ packages:
     cpu: [x64]
     os: [win32]
 
+  '@socket.io/component-emitter@3.1.2':
+    resolution: {integrity: sha512-9BCxFwvbGg/RsZK9tjXd8s4UcwR0MWeFQ1XEKIQVVvAGJyINdrqKMcTRyLoK8Rse1GjzLV9cwjWV1olXRWEXVA==}
+
   '@tailwindcss/node@4.1.17':
     resolution: {integrity: sha512-csIkHIgLb3JisEFQ0vxr2Y57GUNYh447C8xzwj89U/8fdW8LhProdxvnVH6U8M2Y73QKiTIH+LWbK3V2BBZsAg==}
 
@@ -1286,9 +1292,6 @@ packages:
   '@types/estree@1.0.8':
     resolution: {integrity: sha512-dWHzHa2WqEXI/O1E9OjrocMTKJl2mSrEolh1Iomrv6U+JuNwaHXsXx9bLu5gG7BUWFIN0skIQJQ/L1rIex4X6w==}
 
-  '@types/jmuxer@2.0.7':
-    resolution: {integrity: sha512-foRDAEs52drqYKy18t3haRB6UrozeXV1n6U0sEQqT+cmdbTWtsX/2dcLxCZQxjmAN/ey9gaw1OZPZfHmOXUhdQ==}
-
   '@types/json-schema@7.0.15':
     resolution: {integrity: sha512-5+fP8P8MFNC+AyZCDxrB2pkZFPGzqQWUzpSeuuVLvm8VMcorNYavBqoFcxK8bQz4Qsbn4oUEEem4wDLfcysGHA==}
 
@@ -1367,6 +1370,30 @@ packages:
     engines: {node: ^14.18.0 || >=16.0.0}
     peerDependencies:
       vite: ^4.2.0 || ^5.0.0 || ^6.0.0 || ^7.0.0
+
+  '@yume-chan/async@4.1.3':
+    resolution: {integrity: sha512-0vzhNJMkWUPyjKzUK4rqHEeCU6YQtF78RsB1kFRB6Y2BLupmEQNxcSb0mjKabPL9jZpCCiLa5KL8oTOJClUVaw==}
+
+  '@yume-chan/event@1.0.0':
+    resolution: {integrity: sha512-tr4V34WQ5dz2UDMQl4ekj2zGLqwzmclOJpJL+9s2LJpURHw+Szy5g4gi4j86M+5epMFD8dpT9ym/wXHiUdtpsg==}
+
+  '@yume-chan/no-data-view@1.0.0':
+    resolution: {integrity: sha512-KrkXhJJQiCFFXb/eeHB++HCfKuwwiI7RVzHR7X/0XiwjQouxBpNpRFjEO25458Q5p/EPGprGWQ7BsHrmV3mkZQ==}
+
+  '@yume-chan/scrcpy-decoder-tinyh264@1.1.0':
+    resolution: {integrity: sha512-I1PpFlL7/jVUQ8VWzy787DtCersQ0l+UOMkAh5gB/AxDEtFHH/AR0Cr/Yd2uaWr46kKgIvj+SlqY2vW4fdbO9w==}
+
+  '@yume-chan/scrcpy-decoder-webcodecs@1.1.0':
+    resolution: {integrity: sha512-y3ijT/C8ZEEdPO76wiPQLdcsgsPIkWIgWJJfuqtJUcPWpdmWn8ujNUUBlGuS3X1/Q+djnQW4QJ8WISVAje7JBA==}
+
+  '@yume-chan/scrcpy@1.1.0':
+    resolution: {integrity: sha512-/N+tTU0IWWCcstFodsE6eOVpEo8CZk+KvMIywrU0PV22IO+AN2A87NLnAQW8252owNX5Zn8Sf9Iw7OK7K3iPgg==}
+
+  '@yume-chan/stream-extra@1.0.0':
+    resolution: {integrity: sha512-xltJYD5txn63e0jm7bHExmULowJTgjbsC205DN0GCxfdfrZIl6adKVheQNh1yOuOKV5Ok5luWNVSBp7Y2OVffA==}
+
+  '@yume-chan/struct@1.0.0':
+    resolution: {integrity: sha512-PQWUjgITlZstIkLD6ouRDwmR35Z9OJZ9daOQ6ZipzQ/mCnHTeoJf2v8x2+fmGyVrrHf9oaCWe8U/XW65onRlGg==}
 
   acorn-jsx@5.3.2:
     resolution: {integrity: sha512-rq9s+JNhf0IChjtDXxllJ7g41oZk5SlXtp0LHwyA5cejwn7vKmKp4pPri6YEePv2PU65sAsegbXtIinmDFDXgQ==}
@@ -1538,6 +1565,15 @@ packages:
     resolution: {integrity: sha512-BS8PfmtDGnrgYdOonGZQdLZslWIeCGFP9tpan0hi1Co2Zr2NKADsvGYA8XxuG/4UWgJ6Cjtv+YJnB6MM69QGlQ==}
     engines: {node: '>= 0.4'}
 
+  debug@4.3.7:
+    resolution: {integrity: sha512-Er2nc/H7RrMXZBFCEim6TCmMk02Z8vLC2Rbi1KEBggpo0fS6l0S1nnapwmIi3yW/+GOJap1Krg4w0Hg80oCqgQ==}
+    engines: {node: '>=6.0'}
+    peerDependencies:
+      supports-color: '*'
+    peerDependenciesMeta:
+      supports-color:
+        optional: true
+
   debug@4.4.3:
     resolution: {integrity: sha512-RGwwWnwQvkVfavKVt22FGLw+xYSdzARwm0ru6DhTVA3umU5hZc28V3kO4stgYryrTlLpuvgI9GiijltAjNbcqA==}
     engines: {node: '>=6.0'}
@@ -1579,6 +1615,13 @@ packages:
 
   electron-to-chromium@1.5.267:
     resolution: {integrity: sha512-0Drusm6MVRXSOJpGbaSVgcQsuB4hEkMpHXaVstcPmhu5LIedxs1xNK/nIxmQIU/RPC0+1/o0AVZfBTkTNJOdUw==}
+
+  engine.io-client@6.6.3:
+    resolution: {integrity: sha512-T0iLjnyNWahNyv/lcjS2y4oE358tVS/SYQNxYXGAJ9/GLgH4VCvOQ/mhTjqU88mLZCQgiG8RIegFHYCdVC+j5w==}
+
+  engine.io-parser@5.2.3:
+    resolution: {integrity: sha512-HqD3yTBfnBxIrbnM1DoD6Pcq8NECnh8d4As1Qgh0z5Gg3jRRIqijury0CL3ghu/edArpUYiYqQiDUQBIs4np3Q==}
+    engines: {node: '>=10.0.0'}
 
   enhanced-resolve@5.18.3:
     resolution: {integrity: sha512-d4lC8xfavMeBjzGr2vECC3fsGXziXZQyJxD868h2M/mBI3PwAuODxAkLkq5HYuvrPYcUtiLzsTo8U3PgX3Ocww==}
@@ -2011,9 +2054,6 @@ packages:
     resolution: {integrity: sha512-ekilCSN1jwRvIbgeg/57YFh8qQDNbwDb9xT/qu2DAHbFFZUicIl4ygVaAvzveMhMVr3LnpSKTNnwt8PoOfmKhQ==}
     hasBin: true
 
-  jmuxer@2.1.0:
-    resolution: {integrity: sha512-iizwBTIV11RFKrOp0s/SKrb00yz2epwSOdWxdphSfV7gWlAi9ZXpDdNk/m67Dp0M3+4uGL0AcBQmhB2THxABpQ==}
-
   js-tokens@4.0.0:
     resolution: {integrity: sha512-RdJUflcE3cUzKiMqQgsCu06FPu9UdIJO0beYbPhHN4k6apgJtifcoCtT9bcxOpYBtpD2kCM6Sbzg4CausW/PKQ==}
 
@@ -2434,6 +2474,14 @@ packages:
     resolution: {integrity: sha512-ZX99e6tRweoUXqR+VBrslhda51Nh5MTQwou5tnUDgbtyM0dBgmhEDtWGP/xbKn6hqfPRHujUNwz5fy/wbbhnpw==}
     engines: {node: '>= 0.4'}
 
+  socket.io-client@4.8.1:
+    resolution: {integrity: sha512-hJVXfu3E28NmzGk8o1sHhN3om52tRvwYeidbj7xKy2eIIse5IoKX3USlS6Tqt3BHAtflLIkCQBkzVrEEfWUyYQ==}
+    engines: {node: '>=10.0.0'}
+
+  socket.io-parser@4.2.4:
+    resolution: {integrity: sha512-/GbIKmo8ioc+NIWIhwdecY0ge+qVBSMdgxGygevmdHj24bsfgtCmcUUcQ5ZzcylGFHsN3k4HB4Cgkl96KVnuew==}
+    engines: {node: '>=10.0.0'}
+
   solid-js@1.9.10:
     resolution: {integrity: sha512-Coz956cos/EPDlhs6+jsdTxKuJDPT7B5SVIWgABwROyxjY7Xbr8wkzD68Et+NxnV7DLJ3nJdAC2r9InuV/4Jew==}
 
@@ -2507,6 +2555,9 @@ packages:
   tinyglobby@0.2.15:
     resolution: {integrity: sha512-j2Zq4NyQYG5XMST4cbs02Ak8iJUdxRM0XI5QyxXuZOzKOINmWurp3smXu3y5wDcJrptwpSjgXHzIQxR0omXljQ==}
     engines: {node: '>=12.0.0'}
+
+  tinyh264@0.0.7:
+    resolution: {integrity: sha512-etkBRgYkSFBdAi2Cqk4sZgi+xWs/vhzNgvjO3z2i4WILeEmORiNqxuQ4URJatrWQ9LPNV3WPWAtzsh/LA/XL/g==}
 
   to-regex-range@5.0.1:
     resolution: {integrity: sha512-65P7iz6X5yEr1cwcgvQxbbIw7Uk3gOy5dIdtZ4rDveLqhrdJP+Li/Hx6tyK0NEb+2GCyneCMJiGqrADCSNk8sQ==}
@@ -2664,12 +2715,34 @@ packages:
     resolution: {integrity: sha512-BN22B5eaMMI9UMtjrGd5g5eCYPpCPDUy0FJXbYsaT5zYxjFOckS53SQDE3pWkVoWpHXVb3BrYcEN4Twa55B5cA==}
     engines: {node: '>=0.10.0'}
 
+  ws@8.17.1:
+    resolution: {integrity: sha512-6XQFvXTkbfUOZOKKILFG1PDK2NDQs4azKQl26T0YS5CxqWLgXajbPZ+h4gZekJyRqFU8pvnbAbbs/3TgRPy+GQ==}
+    engines: {node: '>=10.0.0'}
+    peerDependencies:
+      bufferutil: ^4.0.1
+      utf-8-validate: '>=5.0.2'
+    peerDependenciesMeta:
+      bufferutil:
+        optional: true
+      utf-8-validate:
+        optional: true
+
+  xmlhttprequest-ssl@2.1.2:
+    resolution: {integrity: sha512-TEU+nJVUUnA4CYJFLvK5X9AOeH4KvDvhIfm0vV1GaQRtchnG0hgK5p8hw/xjv8cunWYCsiPCSDzObPyhEwq3KQ==}
+    engines: {node: '>=0.4.0'}
+
   yallist@3.1.1:
     resolution: {integrity: sha512-a4UGQaWPH59mOXUYnAG2ewncQS4i4F43Tv3JoAM+s2VDAmS9NsK8GpDMLrCHPksFT7h3K6TOoUNn2pb7RoXx4g==}
 
   yocto-queue@0.1.0:
     resolution: {integrity: sha512-rVksvsnNCdJ/ohGc6xgPwyN8eheCxsiLM8mxuE/t/mOVqJewPuO1miLpTHQiRgTKCLexL4MeAFVagts7HmNZ2Q==}
     engines: {node: '>=10'}
+
+  yuv-buffer@1.0.1:
+    resolution: {integrity: sha512-1clmBXOyTX2R8OG0vaTFu5yP/C2XG4ULe+2HUu7c/aYE1fWpKvkGEzqMhUjknXp1Ts6Xfrc0YtIBbYxvaau38Q==}
+
+  yuv-canvas@1.3.0:
+    resolution: {integrity: sha512-zwl+lJgy23iTyCCUZbi0IRP+WezeKNeGEFU+a0gmtVRa81zL6mKJVxr+NKzlveJ2okz4aIOUEPrTs6yjuPt+Cg==}
 
   zod-validation-error@4.0.2:
     resolution: {integrity: sha512-Q6/nZLe6jxuU80qb/4uJ4t5v2VEZ44lzQjPDhYJNztRQ4wyWc6VF3D3Kb/fAuPetZQnhS3hnajCf9CsWesghLQ==}
@@ -3480,6 +3553,8 @@ snapshots:
   '@rollup/rollup-win32-x64-msvc@4.53.3':
     optional: true
 
+  '@socket.io/component-emitter@3.1.2': {}
+
   '@tailwindcss/node@4.1.17':
     dependencies:
       '@jridgewell/remapping': 2.3.5
@@ -3676,15 +3751,12 @@ snapshots:
 
   '@types/estree@1.0.8': {}
 
-  '@types/jmuxer@2.0.7':
-    dependencies:
-      '@types/node': 25.0.1
-
   '@types/json-schema@7.0.15': {}
 
   '@types/node@25.0.1':
     dependencies:
       undici-types: 7.16.0
+    optional: true
 
   '@types/react-dom@19.2.3(@types/react@19.2.7)':
     dependencies:
@@ -3796,6 +3868,50 @@ snapshots:
       vite: 7.2.7(@types/node@25.0.1)(jiti@2.6.1)(lightningcss@1.30.2)(tsx@4.21.0)
     transitivePeerDependencies:
       - supports-color
+
+  '@yume-chan/async@4.1.3': {}
+
+  '@yume-chan/event@1.0.0':
+    dependencies:
+      '@yume-chan/async': 4.1.3
+
+  '@yume-chan/no-data-view@1.0.0': {}
+
+  '@yume-chan/scrcpy-decoder-tinyh264@1.1.0':
+    dependencies:
+      '@yume-chan/async': 4.1.3
+      '@yume-chan/event': 1.0.0
+      '@yume-chan/scrcpy': 1.1.0
+      '@yume-chan/stream-extra': 1.0.0
+      tinyh264: 0.0.7
+      yuv-buffer: 1.0.1
+      yuv-canvas: 1.3.0
+
+  '@yume-chan/scrcpy-decoder-webcodecs@1.1.0':
+    dependencies:
+      '@yume-chan/async': 4.1.3
+      '@yume-chan/event': 1.0.0
+      '@yume-chan/no-data-view': 1.0.0
+      '@yume-chan/scrcpy': 1.1.0
+      '@yume-chan/scrcpy-decoder-tinyh264': 1.1.0
+      '@yume-chan/stream-extra': 1.0.0
+
+  '@yume-chan/scrcpy@1.1.0':
+    dependencies:
+      '@yume-chan/async': 4.1.3
+      '@yume-chan/no-data-view': 1.0.0
+      '@yume-chan/stream-extra': 1.0.0
+      '@yume-chan/struct': 1.0.0
+
+  '@yume-chan/stream-extra@1.0.0':
+    dependencies:
+      '@yume-chan/async': 4.1.3
+      '@yume-chan/struct': 1.0.0
+
+  '@yume-chan/struct@1.0.0':
+    dependencies:
+      '@yume-chan/async': 4.1.3
+      '@yume-chan/no-data-view': 1.0.0
 
   acorn-jsx@5.3.2(acorn@8.15.0):
     dependencies:
@@ -4012,6 +4128,10 @@ snapshots:
       es-errors: 1.3.0
       is-data-view: 1.0.2
 
+  debug@4.3.7:
+    dependencies:
+      ms: 2.1.3
+
   debug@4.4.3:
     dependencies:
       ms: 2.1.3
@@ -4047,6 +4167,20 @@ snapshots:
       gopd: 1.2.0
 
   electron-to-chromium@1.5.267: {}
+
+  engine.io-client@6.6.3:
+    dependencies:
+      '@socket.io/component-emitter': 3.1.2
+      debug: 4.3.7
+      engine.io-parser: 5.2.3
+      ws: 8.17.1
+      xmlhttprequest-ssl: 2.1.2
+    transitivePeerDependencies:
+      - bufferutil
+      - supports-color
+      - utf-8-validate
+
+  engine.io-parser@5.2.3: {}
 
   enhanced-resolve@5.18.3:
     dependencies:
@@ -4621,8 +4755,6 @@ snapshots:
 
   jiti@2.6.1: {}
 
-  jmuxer@2.1.0: {}
-
   js-tokens@4.0.0: {}
 
   js-yaml@4.1.1:
@@ -5050,6 +5182,24 @@ snapshots:
       side-channel-map: 1.0.1
       side-channel-weakmap: 1.0.2
 
+  socket.io-client@4.8.1:
+    dependencies:
+      '@socket.io/component-emitter': 3.1.2
+      debug: 4.3.7
+      engine.io-client: 6.6.3
+      socket.io-parser: 4.2.4
+    transitivePeerDependencies:
+      - bufferutil
+      - supports-color
+      - utf-8-validate
+
+  socket.io-parser@4.2.4:
+    dependencies:
+      '@socket.io/component-emitter': 3.1.2
+      debug: 4.3.7
+    transitivePeerDependencies:
+      - supports-color
+
   solid-js@1.9.10:
     dependencies:
       csstype: 3.2.3
@@ -5138,6 +5288,8 @@ snapshots:
       fdir: 6.5.0(picomatch@4.0.3)
       picomatch: 4.0.3
 
+  tinyh264@0.0.7: {}
+
   to-regex-range@5.0.1:
     dependencies:
       is-number: 7.0.0
@@ -5201,7 +5353,8 @@ snapshots:
       has-symbols: 1.1.0
       which-boxed-primitive: 1.1.1
 
-  undici-types@7.16.0: {}
+  undici-types@7.16.0:
+    optional: true
 
   unplugin@2.3.11:
     dependencies:
@@ -5303,9 +5456,17 @@ snapshots:
 
   word-wrap@1.2.5: {}
 
+  ws@8.17.1: {}
+
+  xmlhttprequest-ssl@2.1.2: {}
+
   yallist@3.1.1: {}
 
   yocto-queue@0.1.0: {}
+
+  yuv-buffer@1.0.1: {}
+
+  yuv-canvas@1.3.0: {}
 
   zod-validation-error@4.0.2(zod@3.25.76):
     dependencies:

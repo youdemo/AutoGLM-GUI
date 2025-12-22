@@ -1,28 +1,49 @@
-import { useEffect, useRef, useState } from 'react';
-import React from 'react';
-import jMuxer from 'jmuxer';
-import JMuxer from 'jmuxer';
+import type { MouseEvent, WheelEvent } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import type { Socket } from 'socket.io-client';
+import { io } from 'socket.io-client';
+import { ScrcpyVideoCodecId } from '@yume-chan/scrcpy';
 import {
-  sendTap,
-  sendSwipe,
+  BitmapVideoFrameRenderer,
+  WebCodecsVideoDecoder,
+  WebGLVideoFrameRenderer,
+} from '@yume-chan/scrcpy-decoder-webcodecs';
+import {
   getScreenshot,
+  sendSwipe,
   sendTouchDown,
   sendTouchMove,
   sendTouchUp,
 } from '../api';
-const WHEEL_DELAY_MS = 400; // Debounce delay for wheel events
-const MOTION_THROTTLE_MS = 50; // Throttle for motion events (50ms = 20 events/sec)
+
+const MOTION_THROTTLE_MS = 50;
+const WHEEL_DELAY_MS = 300;
+
 interface ScrcpyPlayerProps {
-  deviceId: string; // 设备 ID（必填）
+  deviceId: string;
   className?: string;
-  onFallback?: () => void; // Callback when fallback to screenshot is needed
-  fallbackTimeout?: number; // Timeout in ms before fallback (default 5000)
-  enableControl?: boolean; // Enable click control
-  onTapSuccess?: () => void; // Callback on successful tap
-  onTapError?: (error: string) => void; // Callback on tap error
-  onSwipeSuccess?: () => void; // Callback on successful swipe
-  onSwipeError?: (error: string) => void; // Callback on swipe error
-  onStreamReady?: (stream: { close: () => void } | null) => void; // Callback when video stream is ready
+  onFallback?: () => void;
+  fallbackTimeout?: number;
+  enableControl?: boolean;
+  onTapSuccess?: () => void;
+  onTapError?: (error: string) => void;
+  onSwipeSuccess?: () => void;
+  onSwipeError?: (error: string) => void;
+  onStreamReady?: (stream: { close: () => void } | null) => void;
+}
+
+interface VideoMetadata {
+  deviceName?: string;
+  width?: number;
+  height?: number;
+  codec?: number;
+}
+
+interface VideoPacket {
+  type: 'configuration' | 'data';
+  data: ArrayBuffer | Uint8Array;
+  keyframe?: boolean;
+  pts?: number;
 }
 
 export function ScrcpyPlayer({
@@ -37,586 +58,47 @@ export function ScrcpyPlayer({
   onSwipeError,
   onStreamReady,
 }: ScrcpyPlayerProps) {
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const jmuxerRef = useRef<JMuxer | null>(null);
-  const wsRef = useRef<WebSocket | null>(null);
-  const deviceIdRef = useRef<string>(deviceId); // Store current deviceId for reconnect logic
+  const socketRef = useRef<Socket | null>(null);
+  const decoderRef = useRef<WebCodecsVideoDecoder | null>(null);
+  const videoContainerRef = useRef<HTMLDivElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const fallbackTimerRef = useRef<number | null>(null);
+  const reconnectTimerRef = useRef<number | null>(null);
+  const connectDeviceRef = useRef<(() => void) | null>(null);
+  const hasReceivedDataRef = useRef(false);
+  const suppressReconnectRef = useRef(false);
+  const onFallbackRef = useRef(onFallback);
+  const fallbackTimeoutRef = useRef(fallbackTimeout);
+  const onStreamReadyRef = useRef(onStreamReady);
+
   const [status, setStatus] = useState<
     'connecting' | 'connected' | 'error' | 'disconnected'
   >('connecting');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const fallbackTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const hasReceivedDataRef = useRef(false);
-
-  // Ripple effect state
-  interface RippleEffect {
-    id: number;
-    x: number; // CSS pixel coordinates
-    y: number;
-  }
-  const [ripples, setRipples] = useState<RippleEffect[]>([]);
-
-  // Swipe detection state
-  const isDraggingRef = useRef(false);
-  const dragStartRef = useRef<{ x: number; y: number; time: number } | null>(
-    null
-  );
-  const [swipeLine, setSwipeLine] = useState<{
-    id: number;
-    startX: number;
-    startY: number;
-    endX: number;
-    endY: number;
+  const [screenInfo, setScreenInfo] = useState<{
+    width: number;
+    height: number;
   } | null>(null);
-
-  // Wheel debounce state
-  const wheelTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const accumulatedScrollRef = useRef<{
-    deltaY: number;
-    lastTime: number;
-    mouseX: number;
-    mouseY: number;
-  } | null>(null);
-
-  // Motion event throttling state
-  const lastMoveTimeRef = useRef<number>(0);
-  const pendingMoveRef = useRef<{ x: number; y: number } | null>(null);
-  const moveThrottleTimerRef = useRef<NodeJS.Timeout | null>(null);
-
-  // Device actual resolution (not video stream resolution)
   const [deviceResolution, setDeviceResolution] = useState<{
     width: number;
     height: number;
   } | null>(null);
 
-  // Latency monitoring
-  const frameCountRef = useRef(0);
-  const lastStatsTimeRef = useRef<number>(0);
+  const isDraggingRef = useRef(false);
+  const dragStartRef = useRef<{ x: number; y: number } | null>(null);
+  const movedRef = useRef(false);
+  const lastMoveTimeRef = useRef<number>(0);
+  const pendingMoveRef = useRef<{ x: number; y: number } | null>(null);
+  const moveThrottleTimerRef = useRef<number | null>(null);
+  const wheelTimeoutRef = useRef<number | null>(null);
+  const accumulatedScrollRef = useRef<{ deltaY: number } | null>(null);
 
-  // Error recovery tracking
-  const lastErrorTimeRef = useRef<number>(0);
-  const lastConnectTimeRef = useRef<number>(0);
-  const resetAttemptsRef = useRef<number>(0); // Track consecutive reset attempts
-  const lastResetTimeRef = useRef<number>(0); // Track last reset time for debouncing
-  const MAX_RESET_ATTEMPTS = 3; // Max reset attempts before full reconnect
-  const RESET_DEBOUNCE_MS = 1000; // Minimum time between resets
-
-  // Use ref to store latest callback to avoid useEffect re-running
-  const onFallbackRef = useRef(onFallback);
-  const fallbackTimeoutRef = useRef(fallbackTimeout);
-  const onStreamReadyRef = useRef(onStreamReady);
-
-  /**
-   * Convert click coordinates to device coordinates
-   * Accounts for object-fit: contain letterboxing
-   */
-  const getDeviceCoordinates = (
-    clickX: number,
-    clickY: number,
-    videoElement: HTMLVideoElement
-  ): { x: number; y: number } | null => {
-    // Get video element's display dimensions
-    const rect = videoElement.getBoundingClientRect();
-    const displayWidth = rect.width;
-    const displayHeight = rect.height;
-
-    // Get video's native dimensions
-    const videoWidth = videoElement.videoWidth;
-    const videoHeight = videoElement.videoHeight;
-
-    if (videoWidth === 0 || videoHeight === 0) {
-      console.warn('[ScrcpyPlayer] Video dimensions not available yet');
-      return null;
-    }
-
-    // Calculate aspect ratios
-    const videoAspect = videoWidth / videoHeight;
-    const displayAspect = displayWidth / displayHeight;
-
-    // Calculate actual rendered video dimensions (accounting for object-fit: contain)
-    let renderedWidth: number;
-    let renderedHeight: number;
-    let offsetX: number;
-    let offsetY: number;
-
-    if (displayAspect > videoAspect) {
-      // Display is wider - letterbox on sides
-      renderedHeight = displayHeight;
-      renderedWidth = videoAspect * displayHeight;
-      offsetX = (displayWidth - renderedWidth) / 2;
-      offsetY = 0;
-    } else {
-      // Display is taller - letterbox on top/bottom
-      renderedWidth = displayWidth;
-      renderedHeight = displayWidth / videoAspect;
-      offsetX = 0;
-      offsetY = (displayHeight - renderedHeight) / 2;
-    }
-
-    // Check if click is within rendered video area
-    const relativeX = clickX - offsetX;
-    const relativeY = clickY - offsetY;
-
-    if (
-      relativeX < 0 ||
-      relativeX > renderedWidth ||
-      relativeY < 0 ||
-      relativeY > renderedHeight
-    ) {
-      console.warn('[ScrcpyPlayer] Click outside video area (in letterbox)');
-      return null;
-    }
-
-    // Convert to device coordinates
-    const deviceX = Math.round((relativeX / renderedWidth) * videoWidth);
-    const deviceY = Math.round((relativeY / renderedHeight) * videoHeight);
-
-    console.log(`[ScrcpyPlayer] Coordinate transform:
-      Click: (${clickX}, ${clickY})
-      Display: ${displayWidth}x${displayHeight}
-      Video: ${videoWidth}x${videoHeight}
-      Rendered: ${renderedWidth}x${renderedHeight} at offset (${offsetX}, ${offsetY})
-      Device: (${deviceX}, ${deviceY})`);
-
-    return { x: deviceX, y: deviceY };
-  };
-
-  /**
-   * Handle mouse down event for drag start
-   */
-  const handleMouseDown = async (event: React.MouseEvent<HTMLVideoElement>) => {
-    if (!enableControl || !videoRef.current || status !== 'connected') return;
-
-    isDraggingRef.current = true;
-    dragStartRef.current = {
-      x: event.clientX,
-      y: event.clientY,
-      time: Date.now(),
-    };
-
-    // Convert to device coordinates and send DOWN event
-    const rect = videoRef.current.getBoundingClientRect();
-    const clickX = event.clientX - rect.left;
-    const clickY = event.clientY - rect.top;
-
-    const deviceCoords = getDeviceCoordinates(clickX, clickY, videoRef.current);
-    if (!deviceCoords || !deviceResolution) return;
-
-    // Scale to actual device resolution
-    const videoWidth = videoRef.current.videoWidth;
-    const videoHeight = videoRef.current.videoHeight;
-    const scaleX = deviceResolution.width / videoWidth;
-    const scaleY = deviceResolution.height / videoHeight;
-
-    const actualDeviceX = Math.round(deviceCoords.x * scaleX);
-    const actualDeviceY = Math.round(deviceCoords.y * scaleY);
-
-    try {
-      await sendTouchDown(actualDeviceX, actualDeviceY, deviceId);
-      console.log(
-        `[Touch] DOWN: (${actualDeviceX}, ${actualDeviceY}) for device ${deviceId}`
-      );
-    } catch (error) {
-      console.error('[Touch] DOWN failed:', error);
-    }
-  };
-
-  /**
-   * Handle mouse move event with throttling for real-time dragging
-   */
-  const handleMouseMove = (event: React.MouseEvent<HTMLVideoElement>) => {
-    if (!isDraggingRef.current || !dragStartRef.current) return;
-
-    // Update swipe line visualization (no throttle for visual feedback)
-    setSwipeLine({
-      id: Date.now(),
-      startX: dragStartRef.current.x,
-      startY: dragStartRef.current.y,
-      endX: event.clientX,
-      endY: event.clientY,
-    });
-
-    // Throttled MOVE event sending
-    const rect = videoRef.current?.getBoundingClientRect();
-    if (!rect || !videoRef.current || !deviceResolution) return;
-
-    const clickX = event.clientX - rect.left;
-    const clickY = event.clientY - rect.top;
-
-    const deviceCoords = getDeviceCoordinates(clickX, clickY, videoRef.current);
-    if (!deviceCoords) return;
-
-    // Scale to actual device resolution
-    const videoWidth = videoRef.current.videoWidth;
-    const videoHeight = videoRef.current.videoHeight;
-    const scaleX = deviceResolution.width / videoWidth;
-    const scaleY = deviceResolution.height / videoHeight;
-
-    const actualDeviceX = Math.round(deviceCoords.x * scaleX);
-    const actualDeviceY = Math.round(deviceCoords.y * scaleY);
-
-    // Check if enough time has passed since last MOVE event
-    const now = Date.now();
-    if (now - lastMoveTimeRef.current >= MOTION_THROTTLE_MS) {
-      // Send immediately
-      lastMoveTimeRef.current = now;
-      sendTouchMove(actualDeviceX, actualDeviceY, deviceId).catch(error => {
-        console.error('[Touch] MOVE failed:', error);
-      });
-    } else {
-      // Store pending move and schedule throttled send
-      pendingMoveRef.current = { x: actualDeviceX, y: actualDeviceY };
-
-      if (moveThrottleTimerRef.current) {
-        clearTimeout(moveThrottleTimerRef.current);
-      }
-
-      moveThrottleTimerRef.current = setTimeout(
-        () => {
-          if (pendingMoveRef.current) {
-            const { x, y } = pendingMoveRef.current;
-            lastMoveTimeRef.current = Date.now();
-            sendTouchMove(x, y, deviceId).catch(error => {
-              console.error('[Touch] MOVE (throttled) failed:', error);
-            });
-            pendingMoveRef.current = null;
-          }
-        },
-        MOTION_THROTTLE_MS - (now - lastMoveTimeRef.current)
-      );
-    }
-  };
-
-  /**
-   * Handle mouse up event for drag end
-   */
-  const handleMouseUp = async (event: React.MouseEvent<HTMLVideoElement>) => {
-    if (!isDraggingRef.current || !dragStartRef.current) return;
-
-    const deltaX = event.clientX - dragStartRef.current.x;
-    const deltaY = event.clientY - dragStartRef.current.y;
-    const deltaTime = Date.now() - dragStartRef.current.time;
-
-    // Clear swipe line
-    setSwipeLine(null);
-    isDraggingRef.current = false;
-
-    // Clear any pending throttled MOVE events
-    if (moveThrottleTimerRef.current) {
-      clearTimeout(moveThrottleTimerRef.current);
-      moveThrottleTimerRef.current = null;
-    }
-    pendingMoveRef.current = null;
-
-    // Check if it's a tap (short movement, short duration)
-    const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
-    if (distance < 10 && deltaTime < 200) {
-      // It's a tap - use existing tap logic
-      handleVideoClick(event);
-      dragStartRef.current = null;
-      return;
-    }
-
-    // Send UP event at final position
-    const rect = videoRef.current?.getBoundingClientRect();
-    if (!rect || !videoRef.current || !deviceResolution) {
-      dragStartRef.current = null;
-      return;
-    }
-
-    const clickX = event.clientX - rect.left;
-    const clickY = event.clientY - rect.top;
-
-    const deviceCoords = getDeviceCoordinates(clickX, clickY, videoRef.current);
-    if (!deviceCoords) {
-      dragStartRef.current = null;
-      return;
-    }
-
-    // Scale to actual device resolution
-    const videoWidth = videoRef.current.videoWidth;
-    const videoHeight = videoRef.current.videoHeight;
-    const scaleX = deviceResolution.width / videoWidth;
-    const scaleY = deviceResolution.height / videoHeight;
-
-    const actualDeviceX = Math.round(deviceCoords.x * scaleX);
-    const actualDeviceY = Math.round(deviceCoords.y * scaleY);
-
-    try {
-      await sendTouchUp(actualDeviceX, actualDeviceY, deviceId);
-      console.log(
-        `[Touch] UP: (${actualDeviceX}, ${actualDeviceY}) for device ${deviceId}`
-      );
-      onTapSuccess?.();
-    } catch (error) {
-      console.error('[Touch] UP failed:', error);
-      onTapError?.(String(error));
-    }
-
-    dragStartRef.current = null;
-  };
-
-  /**
-   * Handle wheel event for vertical scrolling with debouncing
-   */
-  const handleWheel = async (event: React.WheelEvent<HTMLVideoElement>) => {
-    if (!enableControl || !videoRef.current || status !== 'connected') return;
-
-    // Prevent default scroll behavior
-    // event.preventDefault();
-
-    const now = Date.now();
-    const currentDelta = event.deltaY;
-
-    // Initialize or accumulate scroll data
-    if (!accumulatedScrollRef.current) {
-      accumulatedScrollRef.current = {
-        deltaY: 0,
-        lastTime: now,
-        mouseX: event.clientX,
-        mouseY: event.clientY,
-      };
-    }
-
-    // Accumulate scroll delta and track average mouse position
-    accumulatedScrollRef.current.deltaY += currentDelta;
-    accumulatedScrollRef.current.lastTime = now;
-    // Update mouse position as weighted average to smooth movement
-    const currentWeight = 0.3; // Weight for new mouse position
-    accumulatedScrollRef.current.mouseX = Math.round(
-      accumulatedScrollRef.current.mouseX * (1 - currentWeight) +
-        event.clientX * currentWeight
-    );
-    accumulatedScrollRef.current.mouseY = Math.round(
-      accumulatedScrollRef.current.mouseY * (1 - currentWeight) +
-        event.clientY * currentWeight
-    );
-
-    // Clear existing timeout
-    if (wheelTimeoutRef.current) {
-      clearTimeout(wheelTimeoutRef.current);
-    }
-
-    // Set new timeout to execute scroll after 150ms of inactivity
-    wheelTimeoutRef.current = setTimeout(async () => {
-      if (!accumulatedScrollRef.current || !videoRef.current) return;
-
-      const totalDelta = accumulatedScrollRef.current;
-      accumulatedScrollRef.current = null; // Reset accumulation
-
-      // Validate totalDelta has required properties
-      if (totalDelta.mouseX === undefined || totalDelta.mouseY === undefined)
-        return;
-
-      // Get accumulated mouse position
-      const rect = videoRef.current.getBoundingClientRect();
-      const mouseX = totalDelta.mouseX;
-      const mouseY = totalDelta.mouseY;
-
-      // Calculate scroll distance from accumulated delta
-      const scrollDistance = Math.abs(totalDelta.deltaY);
-      const swipeDuration = Math.min(Math.max(300, scrollDistance), 800); // Duration based on distance
-
-      // Convert mouse position to device coordinates
-      const mouseDeviceCoords = getDeviceCoordinates(
-        mouseX - rect.left,
-        mouseY - rect.top,
-        videoRef.current
-      );
-
-      if (!mouseDeviceCoords || !deviceResolution) {
-        console.warn(
-          '[ScrcpyPlayer] Cannot execute scroll: coordinate transformation failed'
-        );
-        return;
-      }
-
-      // Scale from video stream resolution to device actual resolution
-      const videoWidth = videoRef.current.videoWidth;
-      const videoHeight = videoRef.current.videoHeight;
-      const scaleX = deviceResolution.width / videoWidth;
-      const scaleY = deviceResolution.height / videoHeight;
-
-      const actualCenterX = Math.round(mouseDeviceCoords.x * scaleX);
-      const actualCenterY = Math.round(mouseDeviceCoords.y * scaleY);
-
-      // Calculate swipe start and end points (inverted: scroll down = swipe up)
-      let startY, endY;
-      if (totalDelta.deltaY > 0) {
-        // Scroll down - swipe up (from mouse position upward)
-        startY = actualCenterY;
-        endY = actualCenterY - scrollDistance;
-      } else {
-        // Scroll up - swipe down (from mouse position downward)
-        startY = actualCenterY;
-        endY = actualCenterY + scrollDistance;
-      }
-
-      // Show scroll indicator aligned with actual swipe trajectory
-      // Calculate visual distance using device height to display height ratio (1:1 mapping)
-      const deviceScrollDistance = Math.abs(endY - startY);
-      const visualDistance = Math.max(
-        (deviceScrollDistance / deviceResolution.height) * rect.height, // Direct 1:1 mapping
-        20
-      );
-
-      // Animation duration proportional to actual swipe duration
-      const animationDuration = Math.min(
-        Math.max(swipeDuration * 0.8, 200),
-        800
-      );
-
-      // Create moving ball indicator from mouse position
-      const scrollIndicator = document.createElement('div');
-      scrollIndicator.style.cssText = `
-        position: fixed;
-        left: ${mouseX}px;
-        top: ${mouseY}px;
-        width: 20px;
-        height: 20px;
-        pointer-events: none;
-        z-index: 50;
-        transform: translateX(-50%) translateY(-50%);
-        background: radial-gradient(circle,
-          rgba(59, 130, 246, 0.8) 0%,
-          rgba(59, 130, 246, 0.4) 30%,
-          rgba(59, 130, 246, 0.2) 60%,
-          rgba(59, 130, 246, 0) 100%);
-        border-radius: 50%;
-        box-shadow: 0 0 10px rgba(59, 130, 246, 0.6);
-      `;
-
-      // Create moving ball animation from mouse position
-      const startTime = Date.now();
-      const moveInterval = setInterval(() => {
-        const elapsed = Date.now() - startTime;
-        const progressRatio = Math.min(elapsed / animationDuration, 1);
-
-        const ballTop =
-          totalDelta.deltaY > 0
-            ? mouseY - visualDistance * progressRatio
-            : mouseY + visualDistance * progressRatio;
-
-        scrollIndicator.style.top = ballTop + 'px';
-
-        if (progressRatio >= 1) {
-          clearInterval(moveInterval);
-        }
-      }, 16); // 60fps
-
-      document.body.appendChild(scrollIndicator);
-
-      // Remove scroll indicator after animation
-      setTimeout(() => {
-        if (scrollIndicator.parentNode) {
-          scrollIndicator.parentNode.removeChild(scrollIndicator);
-        }
-        clearInterval(moveInterval);
-      }, animationDuration);
-
-      try {
-        const result = await sendSwipe(
-          actualCenterX,
-          startY,
-          actualCenterX,
-          endY,
-          swipeDuration,
-          deviceId
-        );
-
-        if (result.success) {
-          onSwipeSuccess?.();
-        } else {
-          onSwipeError?.(result.error || 'Scroll failed');
-        }
-      } catch (error) {
-        onSwipeError?.(String(error));
-      }
-    }, WHEEL_DELAY_MS);
-
-    return;
-  };
-
-  /**
-   * Handle video click event
-   */
-  const handleVideoClick = async (
-    event: React.MouseEvent<HTMLVideoElement>
-  ) => {
-    // Guard: Feature disabled
-    if (!enableControl) return;
-
-    // Guard: Video not ready
-    if (!videoRef.current || status !== 'connected') {
-      return;
-    }
-
-    // Guard: Video dimensions not available
-    if (
-      videoRef.current.videoWidth === 0 ||
-      videoRef.current.videoHeight === 0
-    ) {
-      return;
-    }
-
-    // Guard: Device resolution not available
-    if (!deviceResolution) {
-      return;
-    }
-
-    // Get click position relative to video element
-    const rect = videoRef.current.getBoundingClientRect();
-    const clickX = event.clientX - rect.left;
-    const clickY = event.clientY - rect.top;
-
-    // Transform to device coordinates
-    const deviceCoords = getDeviceCoordinates(clickX, clickY, videoRef.current);
-    if (!deviceCoords) {
-      return;
-    }
-
-    // Scale coordinates from video stream resolution to device actual resolution
-    const videoWidth = videoRef.current.videoWidth;
-    const videoHeight = videoRef.current.videoHeight;
-    const scaleX = deviceResolution.width / videoWidth;
-    const scaleY = deviceResolution.height / videoHeight;
-
-    const actualDeviceX = Math.round(deviceCoords.x * scaleX);
-    const actualDeviceY = Math.round(deviceCoords.y * scaleY);
-
-    // Add ripple effect (use viewport coordinates for fixed positioning)
-    const rippleId = Date.now();
-    setRipples(prev => [
-      ...prev,
-      { id: rippleId, x: event.clientX, y: event.clientY },
-    ]);
-
-    // Remove ripple after animation (500ms)
-    setTimeout(() => {
-      setRipples(prev => prev.filter(r => r.id !== rippleId));
-    }, 500);
-
-    // Send tap command with actual device coordinates
-    try {
-      const result = await sendTap(actualDeviceX, actualDeviceY, deviceId);
-      if (result.success) {
-        onTapSuccess?.();
-      } else {
-        onTapError?.(result.error || 'Unknown error');
-      }
-    } catch (error) {
-      onTapError?.(String(error));
-    }
-  };
-
-  // Update refs when props change (without triggering useEffect)
   useEffect(() => {
     onFallbackRef.current = onFallback;
     fallbackTimeoutRef.current = fallbackTimeout;
     onStreamReadyRef.current = onStreamReady;
   }, [onFallback, fallbackTimeout, onStreamReady]);
 
-  // Fetch device actual resolution on mount
   useEffect(() => {
     const fetchDeviceResolution = async () => {
       try {
@@ -626,9 +108,6 @@ export function ScrcpyPlayer({
             width: screenshot.width,
             height: screenshot.height,
           });
-          console.log(
-            `[ScrcpyPlayer] Device actual resolution: ${screenshot.width}x${screenshot.height} for device ${deviceId}`
-          );
         }
       } catch (error) {
         console.error(
@@ -641,559 +120,553 @@ export function ScrcpyPlayer({
     fetchDeviceResolution();
   }, [deviceId]);
 
+  const updateCanvasSize = useCallback(() => {
+    const canvas = canvasRef.current;
+    const container = videoContainerRef.current;
+    if (!canvas || !container || !screenInfo) return;
+
+    const containerWidth = container.clientWidth;
+    const containerHeight = container.clientHeight;
+    const { width: originalWidth, height: originalHeight } = screenInfo;
+
+    const aspectRatio = originalWidth / originalHeight;
+    let targetWidth = containerWidth;
+    let targetHeight = containerWidth / aspectRatio;
+
+    if (targetHeight > containerHeight) {
+      targetHeight = containerHeight;
+      targetWidth = containerHeight * aspectRatio;
+    }
+
+    canvas.width = originalWidth;
+    canvas.height = originalHeight;
+    canvas.style.width = `${targetWidth}px`;
+    canvas.style.height = `${targetHeight}px`;
+  }, [screenInfo]);
+
   useEffect(() => {
-    // Update deviceId ref to always have the latest value
-    deviceIdRef.current = deviceId;
+    const handleResize = () => updateCanvasSize();
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, [updateCanvasSize]);
 
-    let reconnectTimeout: NodeJS.Timeout | null = null;
-    let connectFn: (() => void) | null = null; // Reference to connect function
+  useEffect(() => {
+    updateCanvasSize();
+  }, [screenInfo, updateCanvasSize]);
 
-    const connect = async () => {
-      if (!videoRef.current) return;
+  const createVideoFrameRenderer = useCallback(async () => {
+    if (WebGLVideoFrameRenderer.isSupported) {
+      const renderer = new WebGLVideoFrameRenderer();
+      return {
+        renderer,
+        element: renderer.canvas as HTMLCanvasElement,
+      };
+    }
 
-      console.log('[ScrcpyPlayer] connect() called');
-      lastConnectTimeRef.current = Date.now(); // Record connect time
-      setStatus('connecting');
-      setErrorMessage(null);
+    const renderer = new BitmapVideoFrameRenderer();
+    return {
+      renderer,
+      element: renderer.canvas as HTMLCanvasElement,
+    };
+  }, []);
 
-      // CRITICAL: Close existing WebSocket before creating new one
-      // This prevents duplicate connections
-      if (wsRef.current) {
-        console.log('[ScrcpyPlayer] Closing existing WebSocket');
-        try {
-          // Remove event handlers to prevent onclose from triggering reconnect
-          wsRef.current.onclose = null;
-          wsRef.current.onerror = null;
-          wsRef.current.onmessage = null;
-          wsRef.current.close();
-        } catch (error) {
-          console.error('[ScrcpyPlayer] Error closing old WebSocket:', error);
-        }
-        wsRef.current = null;
-      }
-
-      // CRITICAL: Destroy old jMuxer instance before creating new one
-      // This prevents multiple jMuxer instances fighting over the same video element
-      if (jmuxerRef.current) {
-        console.log('[ScrcpyPlayer] Destroying old jMuxer instance');
-        try {
-          jmuxerRef.current.destroy();
-        } catch (error) {
-          console.error('[ScrcpyPlayer] Error destroying old jMuxer:', error);
-        }
-        jmuxerRef.current = null;
-      }
-
-      // NOTE: Don't manually reset video.src - let jMuxer manage it
-      // Manually resetting causes MEDIA_ERR_SRC_NOT_SUPPORTED errors
-
-      // ✅ CRITICAL: Wait for browser to cleanup MediaSource resources
-      // Creating new jMuxer immediately can cause resource conflicts
-      await new Promise(resolve => setTimeout(resolve, 300));
-
-      try {
-        // Initialize fresh jMuxer with LOW LATENCY settings
-        console.log(
-          '[ScrcpyPlayer] Creating new jMuxer instance (after cleanup delay)'
+  const createDecoder = useCallback(
+    async (codecId: ScrcpyVideoCodecId) => {
+      if (!WebCodecsVideoDecoder.isSupported) {
+        throw new Error(
+          'Current browser does not support WebCodecs API. Please use the latest Chrome/Edge.'
         );
-        jmuxerRef.current = new jMuxer({
-          node: videoRef.current,
-          mode: 'video',
-          flushingTime: 0, // ✅ Try 0 again since backend data is now correct
-          fps: 30,
-          debug: false,
-          clearBuffer: true, // ✅ Clear buffer on errors to prevent buildup
+      }
 
-          // ✅ Enhanced error handling with reset-first strategy
-          onError: (error: { name: string; error: string }) => {
-            console.error('[jMuxer] Decoder error:', error);
+      const { renderer, element } = await createVideoFrameRenderer();
+      canvasRef.current = element;
 
-            // Handle buffer errors with progressive recovery strategy
-            if (
-              error.name === 'InvalidStateError' &&
-              error.error === 'buffer error'
-            ) {
-              const now = Date.now();
-              const timeSinceLastReset = now - lastResetTimeRef.current;
+      // Only append if not already appended (check if canvas is in DOM)
+      if (videoContainerRef.current && !element.parentElement) {
+        videoContainerRef.current.appendChild(element);
+      }
 
-              // Debounce: prevent rapid consecutive resets
-              if (timeSinceLastReset < RESET_DEBOUNCE_MS) {
-                console.warn(
-                  `[jMuxer] Reset debounced (${timeSinceLastReset}ms since last reset)`
-                );
-                return;
-              }
+      return new WebCodecsVideoDecoder({
+        codec: codecId,
+        renderer,
+      });
+    },
+    [createVideoFrameRenderer]
+  );
 
-              lastResetTimeRef.current = now;
-              resetAttemptsRef.current++;
+  const markDataReceived = useCallback(() => {
+    if (hasReceivedDataRef.current) return;
+    hasReceivedDataRef.current = true;
+    if (fallbackTimerRef.current) {
+      clearTimeout(fallbackTimerRef.current);
+      fallbackTimerRef.current = null;
+    }
+  }, []);
 
-              console.warn(
-                `[jMuxer] ⚠️ Buffer error detected (attempt ${resetAttemptsRef.current}/${MAX_RESET_ATTEMPTS})`
-              );
+  const setupVideoStream = useCallback(
+    (_metadata: VideoMetadata) => {
+      let configurationPacketSent = false;
+      let pendingDataPackets: VideoPacket[] = [];
 
-              // Strategy: Try reset() first, only reconnect as last resort
-              if (resetAttemptsRef.current <= MAX_RESET_ATTEMPTS) {
-                // ✅ OPTIMIZED: Use reset() instead of destroy + reconnect
-                if (jmuxerRef.current) {
-                  try {
-                    console.log('[jMuxer] Attempting lightweight reset()...');
-                    jmuxerRef.current.reset();
-                    console.log('[jMuxer] ✓ Reset successful');
+      const transformStream = new TransformStream<VideoPacket, VideoPacket>({
+        transform(packet, controller) {
+          if (packet.type === 'configuration') {
+            controller.enqueue(packet);
+            configurationPacketSent = true;
 
-                    // If reset succeeds, don't reconnect WebSocket
-                    // Just continue receiving data on existing connection
-                    return;
-                  } catch (resetError) {
-                    console.error('[jMuxer] Reset failed:', resetError);
-                    // Fall through to full reconnect
-                  }
-                }
-              }
-
-              // CRITICAL: After reset, decoder needs fresh SPS+PPS+IDR
-              // Close and reconnect WebSocket to get initialization data
-              console.log(
-                '[jMuxer] Reset successful, reconnecting to get fresh initialization data...'
-              );
-
-              lastErrorTimeRef.current = now;
-              const errorDeviceId = currentDeviceId;
-
-              if (connectFn) {
-                setTimeout(() => {
-                  if (deviceIdRef.current === errorDeviceId) {
-                    if (connectFn) {
-                      connectFn();
-                    }
-                  } else {
-                    console.log(
-                      `[jMuxer] Device changed (${errorDeviceId} -> ${deviceIdRef.current}), skip reconnect`
-                    );
-                  }
-                }, 100);
-              }
-            }
-          },
-
-          // ✅ Disabled: jMuxer has a bug treating H.264 slices as separate frames (Issue #44)
-          // This causes false "Missing video frames" warnings when frames are sliced (common in complex scenes)
-          // See: https://github.com/samirkumardas/jmuxer/issues/44
-          onMissingVideoFrames: (frames: unknown) => {
-            console.warn('[jMuxer] Missing video frames detected:', frames);
-          },
-        });
-
-        // Connect WebSocket (with device_id parameter)
-        // Use deviceIdRef.current to always get the latest deviceId, even during reconnects
-        const currentDeviceId = deviceIdRef.current;
-        const wsUrl = `ws://localhost:8000/api/video/stream?device_id=${encodeURIComponent(currentDeviceId)}`;
-        const ws = new WebSocket(wsUrl);
-        wsRef.current = ws;
-        ws.binaryType = 'arraybuffer';
-
-        ws.onopen = () => {
-          console.log(
-            `[ScrcpyPlayer] WebSocket connected for device ${currentDeviceId}`
-          );
-          setStatus('connected');
-
-          // ✅ Reset error recovery counters on successful connection
-          resetAttemptsRef.current = 0;
-          lastResetTimeRef.current = 0;
-
-          // Notify parent component that video stream is ready
-          if (onStreamReadyRef.current) {
-            onStreamReadyRef.current({
-              close: () => {
-                ws.close();
-              },
-            });
-          }
-
-          // Start fallback timer
-          fallbackTimerRef.current = setTimeout(() => {
-            if (!hasReceivedDataRef.current) {
-              console.log(
-                '[ScrcpyPlayer] No data received within timeout, triggering fallback'
-              );
-              setStatus('error');
-              setErrorMessage('Video stream timeout');
-              ws.close();
-              if (onFallbackRef.current) {
-                onFallbackRef.current();
-              }
-            }
-          }, fallbackTimeoutRef.current);
-        };
-
-        ws.onmessage = event => {
-          if (typeof event.data === 'string') {
-            // Error message from server
-            try {
-              const error = JSON.parse(event.data);
-              // 若是正常断开（切换 WiFi 等场景）返回的 “Socket closed by remote”，静默处理，不打扰用户
-              if (
-                typeof error?.error === 'string' &&
-                error.error.toLowerCase().includes('socket closed by remote')
-              ) {
-                console.debug('[ScrcpyPlayer] Ignored expected close:', error);
-              } else {
-                console.error('[ScrcpyPlayer] Server error:', error);
-                setErrorMessage(error.error || 'Unknown error');
-                setStatus('error');
-              }
-
-              // Trigger fallback on error
-              if (
-                onFallbackRef.current &&
-                !hasReceivedDataRef.current &&
-                !(
-                  typeof error?.error === 'string' &&
-                  error.error.toLowerCase().includes('socket closed by remote')
-                )
-              ) {
-                onFallbackRef.current();
-              }
-            } catch {
-              console.error(
-                '[ScrcpyPlayer] Received non-JSON string:',
-                event.data
-              );
+            if (pendingDataPackets.length > 0) {
+              pendingDataPackets.forEach(p => controller.enqueue(p));
+              pendingDataPackets = [];
             }
             return;
           }
 
-          // Log first message (initialization data: SPS+PPS+IDR)
-          if (!hasReceivedDataRef.current) {
-            const data = new Uint8Array(event.data);
-            console.log(
-              `[ScrcpyPlayer] ✓ Received initialization data (${data.length} bytes)`
-            );
-
-            // Count NAL units in initialization data
-            let nalCount = 0;
-            for (let i = 0; i < data.length - 3; i++) {
-              if (
-                data[i] === 0x00 &&
-                data[i + 1] === 0x00 &&
-                (data[i + 2] === 0x01 ||
-                  (data[i + 2] === 0x00 && data[i + 3] === 0x01))
-              ) {
-                nalCount++;
-              }
-            }
-            console.log(
-              `[ScrcpyPlayer] Initialization data contains ${nalCount} NAL units`
-            );
+          if (packet.type === 'data' && !configurationPacketSent) {
+            pendingDataPackets.push(packet);
+            return;
           }
 
-          // H.264 video data received successfully
-          if (!hasReceivedDataRef.current) {
-            hasReceivedDataRef.current = true;
-            console.log(
-              '[ScrcpyPlayer] First video data received, canceling fallback timer'
-            );
-            if (fallbackTimerRef.current) {
-              clearTimeout(fallbackTimerRef.current);
-              fallbackTimerRef.current = null;
+          controller.enqueue(packet);
+        },
+      });
+
+      const videoStream = new ReadableStream<VideoPacket>({
+        start(controller) {
+          let streamClosed = false;
+
+          const videoDataHandler = (data: VideoPacket) => {
+            if (streamClosed) return;
+            try {
+              markDataReceived();
+              const payload = {
+                ...data,
+                data:
+                  data.data instanceof Uint8Array
+                    ? data.data
+                    : new Uint8Array(data.data),
+              };
+              controller.enqueue(payload);
+            } catch (error) {
+              console.error('[ScrcpyPlayer] Video enqueue error:', error);
+              streamClosed = true;
+              cleanup();
             }
-          }
+          };
 
-          // Feed to jMuxer - each WebSocket message is one complete NAL unit
-          // Backend ensures NAL unit boundaries, frontend just needs to pass through
-          try {
-            if (jmuxerRef.current && event.data.byteLength > 0) {
-              const videoData = new Uint8Array(event.data);
+          const errorHandler = (error: { message?: string }) => {
+            if (streamClosed) return;
+            controller.error(new Error(error?.message || 'Socket error'));
+            streamClosed = true;
+            cleanup();
+          };
 
-              // Validate NAL unit structure (should start with start code)
-              const hasStartCode =
-                videoData[0] === 0x00 &&
-                videoData[1] === 0x00 &&
-                (videoData[2] === 0x00 || videoData[2] === 0x01);
+          const disconnectHandler = () => {
+            if (streamClosed) return;
+            controller.close();
+            streamClosed = true;
+            cleanup();
+          };
 
-              if (!hasStartCode) {
-                console.warn(
-                  `[ScrcpyPlayer] Invalid NAL unit: missing start code, first bytes = ${Array.from(
-                    videoData.slice(0, 8)
-                  )
-                    .map(b => b.toString(16).padStart(2, '0'))
-                    .join(' ')}`
-                );
-              }
+          const cleanup = () => {
+            socketRef.current?.off('video-data', videoDataHandler);
+            socketRef.current?.off('error', errorHandler);
+            socketRef.current?.off('disconnect', disconnectHandler);
+          };
 
-              // Extract NAL type for debugging (skip for first message which is multi-NAL init data)
-              if (hasReceivedDataRef.current) {
-                const nalHeaderOffset = videoData[2] === 0x01 ? 3 : 4;
-                const nalType = videoData[nalHeaderOffset] & 0x1f;
+          socketRef.current?.on('video-data', videoDataHandler);
+          socketRef.current?.on('error', errorHandler);
+          socketRef.current?.on('disconnect', disconnectHandler);
 
-                // Log important NAL units (SPS=7, PPS=8, IDR=5)
-                if (nalType === 5 || nalType === 7 || nalType === 8) {
-                  const typeNames: Record<number, string> = {
-                    5: 'IDR',
-                    7: 'SPS',
-                    8: 'PPS',
-                  };
-                  console.log(
-                    `[ScrcpyPlayer] Received ${typeNames[nalType]} NAL unit (${videoData.length} bytes)`
-                  );
-                }
-              }
+          return () => {
+            streamClosed = true;
+            cleanup();
+          };
+        },
+      });
 
-              // Feed complete NAL unit to jMuxer
-              jmuxerRef.current.feed({
-                video: videoData,
-              });
+      return videoStream.pipeThrough(transformStream);
+    },
+    [markDataReceived]
+  );
 
-              // Monitor frame rate and detect buffer buildup
-              frameCountRef.current++;
-              const now = Date.now();
-              const elapsed = now - lastStatsTimeRef.current;
-
-              if (elapsed > 5000) {
-                // Log stats every 5 seconds
-                const fps = (frameCountRef.current / elapsed) * 1000;
-                const videoEl = videoRef.current;
-                const buffered =
-                  videoEl && videoEl.buffered.length > 0
-                    ? videoEl.buffered.end(0) - videoEl.currentTime
-                    : 0;
-
-                console.log(
-                  `[ScrcpyPlayer] Stats: ${fps.toFixed(1)} fps, buffer: ${buffered.toFixed(2)}s`
-                );
-
-                // ✅ WARNING: If buffer > 2 seconds, we're falling behind
-                if (buffered > 2) {
-                  console.warn(
-                    `[ScrcpyPlayer] ⚠ High latency detected: ${buffered.toFixed(2)}s buffer`
-                  );
-                }
-
-                frameCountRef.current = 0;
-                lastStatsTimeRef.current = now;
-              }
-            }
-          } catch (error) {
-            console.error('[ScrcpyPlayer] Feed error:', error);
-          }
-        };
-
-        ws.onerror = error => {
-          console.error('[ScrcpyPlayer] WebSocket error:', error);
-          setErrorMessage('Connection error');
-          setStatus('error');
-        };
-
-        ws.onclose = () => {
-          console.log('[ScrcpyPlayer] WebSocket closed');
-          setStatus('disconnected');
-
-          // Notify parent component that video stream is disconnected
-          if (onStreamReadyRef.current) {
-            onStreamReadyRef.current(null);
-          }
-
-          // Auto-reconnect after 3 seconds
-          // But only if we're still on the same device
-          const closedDeviceId = currentDeviceId; // Capture device ID at close time
-          reconnectTimeout = setTimeout(() => {
-            // Check if device hasn't changed before reconnecting
-            if (deviceIdRef.current === closedDeviceId) {
-              console.log('[ScrcpyPlayer] Attempting to reconnect...');
-              connect();
-            } else {
-              console.log(
-                `[ScrcpyPlayer] Device changed (${closedDeviceId} -> ${deviceIdRef.current}), skip reconnect`
-              );
-            }
-          }, 3000);
-        };
+  const disconnectDevice = useCallback((suppressReconnect = false) => {
+    if (suppressReconnect) {
+      suppressReconnectRef.current = true;
+    }
+    if (decoderRef.current) {
+      try {
+        decoderRef.current.dispose();
       } catch (error) {
-        console.error('[ScrcpyPlayer] Initialization error:', error);
-        setErrorMessage('Initialization failed');
+        console.error('[ScrcpyPlayer] Failed to dispose decoder:', error);
+      }
+      decoderRef.current = null;
+    }
+
+    // Just clear the reference, let React handle DOM cleanup
+    canvasRef.current = null;
+
+    if (socketRef.current) {
+      socketRef.current.disconnect();
+      socketRef.current = null;
+    }
+
+    onStreamReadyRef.current?.(null);
+
+    if (reconnectTimerRef.current) {
+      clearTimeout(reconnectTimerRef.current);
+      reconnectTimerRef.current = null;
+    }
+
+    if (fallbackTimerRef.current) {
+      clearTimeout(fallbackTimerRef.current);
+      fallbackTimerRef.current = null;
+    }
+
+    setStatus('disconnected');
+    setScreenInfo(null);
+    setErrorMessage(null);
+  }, []);
+
+  const connectDevice = useCallback(() => {
+    disconnectDevice(true);
+    hasReceivedDataRef.current = false;
+    setStatus('connecting');
+    setErrorMessage(null);
+
+    const socket = io({
+      path: '/socket.io',
+      transports: ['websocket'],
+      timeout: 10000,
+    });
+    socketRef.current = socket;
+
+    socket.on('connect', () => {
+      socket.emit('connect-device', {
+        device_id: deviceId,
+        maxSize: 1280,
+        bitRate: 4_000_000,
+      });
+
+      fallbackTimerRef.current = setTimeout(() => {
+        if (!hasReceivedDataRef.current) {
+          setStatus('error');
+          setErrorMessage('Video stream timeout');
+          suppressReconnectRef.current = true;
+          socket.close();
+          onFallbackRef.current?.();
+        }
+      }, fallbackTimeoutRef.current);
+    });
+
+    socket.on('video-metadata', async (metadata: VideoMetadata) => {
+      try {
+        if (decoderRef.current) {
+          decoderRef.current.dispose();
+          decoderRef.current = null;
+        }
+
+        const codecId = metadata?.codec
+          ? (metadata.codec as ScrcpyVideoCodecId)
+          : ScrcpyVideoCodecId.H264;
+
+        decoderRef.current = await createDecoder(codecId);
+        decoderRef.current.sizeChanged(({ width, height }) => {
+          setScreenInfo({ width, height });
+        });
+
+        const videoStream = setupVideoStream(metadata);
+        videoStream
+          .pipeTo(decoderRef.current.writable as WritableStream<VideoPacket>)
+          .catch((error: Error) => {
+            console.error('[ScrcpyPlayer] Video stream error:', error);
+          });
+
+        setStatus('connected');
+        onStreamReadyRef.current?.({ close: () => socket.close() });
+      } catch (error) {
+        console.error('[ScrcpyPlayer] Decoder initialization failed:', error);
         setStatus('error');
+        setErrorMessage('Decoder initialization failed');
+        suppressReconnectRef.current = true;
+        socket.close();
+        onFallbackRef.current?.();
       }
-    };
+    });
 
-    // Make connect function accessible to jMuxer error handler
-    connectFn = connect;
+    socket.on('error', (error: { message?: string }) => {
+      console.error('[ScrcpyPlayer] Socket error:', error);
+      setStatus('error');
+      setErrorMessage(error?.message || 'Socket error');
+    });
 
-    connect();
+    socket.on('disconnect', () => {
+      if (suppressReconnectRef.current) {
+        suppressReconnectRef.current = false;
+        return;
+      }
 
-    // Cleanup
+      setStatus('disconnected');
+      onStreamReadyRef.current?.(null);
+
+      if (!reconnectTimerRef.current) {
+        reconnectTimerRef.current = setTimeout(() => {
+          reconnectTimerRef.current = null;
+          connectDeviceRef.current?.();
+        }, 3000);
+      }
+    });
+  }, [deviceId, disconnectDevice, createDecoder, setupVideoStream]);
+
+  useEffect(() => {
+    connectDeviceRef.current = connectDevice;
+  }, [connectDevice]);
+
+  useEffect(() => {
+    // Use queueMicrotask to avoid synchronous setState within effect
+    queueMicrotask(() => {
+      connectDevice();
+    });
+
     return () => {
-      if (reconnectTimeout) {
-        clearTimeout(reconnectTimeout);
-      }
-
-      if (fallbackTimerRef.current) {
-        clearTimeout(fallbackTimerRef.current);
-        fallbackTimerRef.current = null;
-      }
-
-      if (wsRef.current) {
-        wsRef.current.close();
-        wsRef.current = null;
-      }
-
-      // Cleanup motion throttle timer
       if (moveThrottleTimerRef.current) {
         clearTimeout(moveThrottleTimerRef.current);
         moveThrottleTimerRef.current = null;
       }
 
-      if (jmuxerRef.current) {
-        try {
-          jmuxerRef.current.destroy();
-        } catch (error) {
-          console.error('[ScrcpyPlayer] Cleanup error:', error);
-        }
-        jmuxerRef.current = null;
+      if (wheelTimeoutRef.current) {
+        clearTimeout(wheelTimeoutRef.current);
+        wheelTimeoutRef.current = null;
       }
+
+      disconnectDevice(true);
     };
-  }, [deviceId]);
+  }, [connectDevice, disconnectDevice]);
+
+  const getStreamDimensions = () => {
+    if (screenInfo) {
+      return { width: screenInfo.width, height: screenInfo.height };
+    }
+    const canvas = canvasRef.current;
+    if (!canvas) return null;
+    return { width: canvas.width, height: canvas.height };
+  };
+
+  const mapToDeviceCoordinates = (clientX: number, clientY: number) => {
+    const canvas = canvasRef.current;
+    const streamDimensions = getStreamDimensions();
+    if (!canvas || !streamDimensions) return null;
+
+    const rect = canvas.getBoundingClientRect();
+    if (
+      clientX < rect.left ||
+      clientX > rect.right ||
+      clientY < rect.top ||
+      clientY > rect.bottom
+    ) {
+      return null;
+    }
+
+    const relativeX = clientX - rect.left;
+    const relativeY = clientY - rect.top;
+
+    const streamX = Math.round(
+      (relativeX / rect.width) * streamDimensions.width
+    );
+    const streamY = Math.round(
+      (relativeY / rect.height) * streamDimensions.height
+    );
+
+    const scaleX = deviceResolution
+      ? deviceResolution.width / streamDimensions.width
+      : 1;
+    const scaleY = deviceResolution
+      ? deviceResolution.height / streamDimensions.height
+      : 1;
+
+    return {
+      x: Math.round(streamX * scaleX),
+      y: Math.round(streamY * scaleY),
+    };
+  };
+
+  const handleMouseDown = async (event: MouseEvent<HTMLDivElement>) => {
+    if (!enableControl || status !== 'connected') return;
+
+    const coords = mapToDeviceCoordinates(event.clientX, event.clientY);
+    if (!coords) return;
+
+    isDraggingRef.current = true;
+    movedRef.current = false;
+    dragStartRef.current = { x: event.clientX, y: event.clientY };
+
+    try {
+      await sendTouchDown(coords.x, coords.y, deviceId);
+    } catch (error) {
+      console.error('[ScrcpyPlayer] Touch down failed:', error);
+    }
+  };
+
+  const handleMouseMove = (event: MouseEvent<HTMLDivElement>) => {
+    if (!isDraggingRef.current || status !== 'connected') return;
+
+    const now = Date.now();
+    const coords = mapToDeviceCoordinates(event.clientX, event.clientY);
+    if (!coords) return;
+
+    if (dragStartRef.current) {
+      const dx = event.clientX - dragStartRef.current.x;
+      const dy = event.clientY - dragStartRef.current.y;
+      if (Math.hypot(dx, dy) > 4) {
+        movedRef.current = true;
+      }
+    }
+
+    pendingMoveRef.current = coords;
+    if (now - lastMoveTimeRef.current < MOTION_THROTTLE_MS) {
+      if (!moveThrottleTimerRef.current) {
+        moveThrottleTimerRef.current = setTimeout(() => {
+          moveThrottleTimerRef.current = null;
+          if (pendingMoveRef.current) {
+            sendTouchMove(
+              pendingMoveRef.current.x,
+              pendingMoveRef.current.y,
+              deviceId
+            ).catch(error => {
+              console.error('[ScrcpyPlayer] Touch move failed:', error);
+            });
+            pendingMoveRef.current = null;
+            lastMoveTimeRef.current = Date.now();
+          }
+        }, MOTION_THROTTLE_MS);
+      }
+      return;
+    }
+
+    lastMoveTimeRef.current = now;
+    sendTouchMove(coords.x, coords.y, deviceId).catch(error => {
+      console.error('[ScrcpyPlayer] Touch move failed:', error);
+    });
+  };
+
+  const handleMouseUp = async (event: MouseEvent<HTMLDivElement>) => {
+    if (!isDraggingRef.current || status !== 'connected') return;
+
+    const coords = mapToDeviceCoordinates(event.clientX, event.clientY);
+    isDraggingRef.current = false;
+    dragStartRef.current = null;
+
+    if (!coords) return;
+
+    try {
+      await sendTouchUp(coords.x, coords.y, deviceId);
+      if (!movedRef.current) {
+        onTapSuccess?.();
+      } else {
+        onSwipeSuccess?.();
+      }
+    } catch (error) {
+      const message = String(error);
+      if (!movedRef.current) {
+        onTapError?.(message);
+      } else {
+        onSwipeError?.(message);
+      }
+    }
+  };
+
+  const handleMouseLeave = async (event: MouseEvent<HTMLDivElement>) => {
+    if (!isDraggingRef.current || status !== 'connected') return;
+
+    const coords = mapToDeviceCoordinates(event.clientX, event.clientY);
+    isDraggingRef.current = false;
+    dragStartRef.current = null;
+
+    if (!coords) return;
+
+    try {
+      await sendTouchUp(coords.x, coords.y, deviceId);
+    } catch (error) {
+      console.error('[ScrcpyPlayer] Touch cancel failed:', error);
+    }
+  };
+
+  const handleWheel = (event: WheelEvent<HTMLDivElement>) => {
+    if (!enableControl || status !== 'connected') return;
+
+    event.preventDefault();
+    const deltaY = event.deltaY;
+
+    if (!accumulatedScrollRef.current) {
+      accumulatedScrollRef.current = { deltaY: 0 };
+    }
+    accumulatedScrollRef.current.deltaY += deltaY;
+
+    if (wheelTimeoutRef.current) {
+      clearTimeout(wheelTimeoutRef.current);
+    }
+
+    wheelTimeoutRef.current = setTimeout(async () => {
+      const current = accumulatedScrollRef.current;
+      accumulatedScrollRef.current = null;
+      if (!current) return;
+
+      const canvas = canvasRef.current;
+      const streamDimensions = getStreamDimensions();
+      if (!canvas || !streamDimensions) return;
+
+      const rect = canvas.getBoundingClientRect();
+      const centerX = rect.left + rect.width / 2;
+      const centerY = rect.top + rect.height / 2;
+
+      const startCoords = mapToDeviceCoordinates(centerX, centerY);
+      if (!startCoords) return;
+
+      const delta = Math.max(Math.min(current.deltaY, 600), -600);
+      const endClientY = centerY + delta;
+      const endCoords = mapToDeviceCoordinates(centerX, endClientY);
+      if (!endCoords) return;
+
+      try {
+        const result = await sendSwipe(
+          startCoords.x,
+          startCoords.y,
+          endCoords.x,
+          endCoords.y,
+          300,
+          deviceId
+        );
+        if (result.success) {
+          onSwipeSuccess?.();
+        } else {
+          onSwipeError?.(result.error || 'Scroll failed');
+        }
+      } catch (error) {
+        onSwipeError?.(String(error));
+      }
+    }, WHEEL_DELAY_MS);
+  };
 
   return (
     <div
       className={`relative w-full h-full flex items-center justify-center ${className || ''}`}
     >
-      {/* Video element */}
-      <video
-        ref={videoRef}
-        autoPlay
-        muted
-        playsInline
-        onError={e => {
-          const videoEl = e.currentTarget;
-          const error = videoEl.error;
-          if (error) {
-            console.error('[Video Element] Error occurred:', {
-              code: error.code,
-              message: error.message,
-              MEDIA_ERR_ABORTED: error.code === 1,
-              MEDIA_ERR_NETWORK: error.code === 2,
-              MEDIA_ERR_DECODE: error.code === 3,
-              MEDIA_ERR_SRC_NOT_SUPPORTED: error.code === 4,
-            });
-          }
-        }}
+      <div
+        ref={videoContainerRef}
+        className="relative w-full h-full flex items-center justify-center bg-slate-900"
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
-        onMouseLeave={async () => {
-          // Cancel drag if mouse leaves video area
-          if (isDraggingRef.current && videoRef.current && deviceResolution) {
-            // Send UP event to cancel incomplete gesture
-            if (dragStartRef.current) {
-              const rect = videoRef.current.getBoundingClientRect();
-              // Use dragStart as fallback position
-              const deviceCoords = getDeviceCoordinates(
-                dragStartRef.current.x - rect.left,
-                dragStartRef.current.y - rect.top,
-                videoRef.current
-              );
-
-              if (deviceCoords) {
-                const scaleX =
-                  deviceResolution.width / videoRef.current.videoWidth;
-                const scaleY =
-                  deviceResolution.height / videoRef.current.videoHeight;
-                const x = Math.round(deviceCoords.x * scaleX);
-                const y = Math.round(deviceCoords.y * scaleY);
-
-                try {
-                  await sendTouchUp(x, y, deviceId);
-                  console.log(
-                    `[Touch] UP (mouse leave) for device ${deviceId}`
-                  );
-                } catch (error) {
-                  console.error('[Touch] UP (mouse leave) failed:', error);
-                }
-              }
-            }
-
-            isDraggingRef.current = false;
-            setSwipeLine(null);
-            dragStartRef.current = null;
-          }
-        }}
+        onMouseLeave={handleMouseLeave}
         onWheel={handleWheel}
-        className={`max-w-full max-h-full object-contain ${
-          enableControl ? 'cursor-pointer' : ''
-        }`}
-        style={{ backgroundColor: '#000' }}
-      />
-
-      {/* Swipe line visualization */}
-      {enableControl && swipeLine && (
-        <svg className="fixed inset-0 pointer-events-none z-40">
-          <line
-            x1={swipeLine.startX}
-            y1={swipeLine.startY}
-            x2={swipeLine.endX}
-            y2={swipeLine.endY}
-            stroke="rgba(59, 130, 246, 0.8)"
-            strokeWidth="3"
-            strokeLinecap="round"
-          />
-          <circle
-            cx={swipeLine.startX}
-            cy={swipeLine.startY}
-            r="6"
-            fill="rgba(59, 130, 246, 0.8)"
-          />
-          <circle
-            cx={swipeLine.endX}
-            cy={swipeLine.endY}
-            r="6"
-            fill="rgba(239, 68, 68, 0.8)"
-          />
-        </svg>
-      )}
-
-      {/* Ripple effects overlay */}
-      {enableControl &&
-        ripples.map(ripple => (
-          <div
-            key={ripple.id}
-            className="fixed pointer-events-none z-50"
-            style={{
-              left: ripple.x,
-              top: ripple.y,
-            }}
-          >
-            <div className="ripple-circle" />
+      >
+        {status !== 'connected' && (
+          <div className="absolute inset-0 flex items-center justify-center text-slate-400">
+            {status === 'connecting' && 'Connecting...'}
+            {status === 'error' && (errorMessage || 'Connection error')}
+            {status === 'disconnected' && 'Disconnected'}
           </div>
-        ))}
-
-      {/* Status overlay */}
-      {status !== 'connected' && (
-        <div className="absolute inset-0 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-          <div className="text-center text-white">
-            {status === 'connecting' && (
-              <>
-                <div className="w-8 h-8 border-4 border-white border-t-transparent rounded-full animate-spin mx-auto mb-2" />
-                <p>正在连接...</p>
-              </>
-            )}
-            {status === 'disconnected' && (
-              <>
-                <div className="w-8 h-8 border-4 border-yellow-500 border-t-transparent rounded-full animate-spin mx-auto mb-2" />
-                <p>连接断开，正在重连...</p>
-              </>
-            )}
-            {status === 'error' && (
-              <>
-                <div className="text-red-500 text-xl mb-2">✗</div>
-                <p className="text-red-400">连接失败</p>
-                {errorMessage && (
-                  <p className="text-sm text-gray-400 mt-1">{errorMessage}</p>
-                )}
-              </>
-            )}
-          </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }
