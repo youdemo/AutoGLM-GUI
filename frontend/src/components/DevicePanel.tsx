@@ -71,10 +71,16 @@ export function DevicePanel({
     'auto' | 'video' | 'screenshot'
   >('auto');
   const [feedbackMessage, setFeedbackMessage] = useState<string | null>(null);
-  const [feedbackType, setFeedbackType] = useState<'tap' | 'swipe' | 'error' | 'success'>('success');
+  const [feedbackType, setFeedbackType] = useState<
+    'tap' | 'swipe' | 'error' | 'success'
+  >('success');
   const feedbackTimeoutRef = useRef<number | null>(null);
 
-  const showFeedback = (message: string, duration = 2000, type: 'tap' | 'swipe' | 'error' | 'success' = 'success') => {
+  const showFeedback = (
+    message: string,
+    duration = 2000,
+    type: 'tap' | 'swipe' | 'error' | 'success' = 'success'
+  ) => {
     if (feedbackTimeoutRef.current) {
       clearTimeout(feedbackTimeoutRef.current);
     }
@@ -415,7 +421,8 @@ export function DevicePanel({
                 {t.devicePanel.describeTask}
               </p>
             </div>
-          ) : messages.map(message => (
+          ) : (
+            messages.map(message => (
               <div
                 key={message.id}
                 className={`flex ${
@@ -438,7 +445,9 @@ export function DevicePanel({
                             Step {idx + 1}
                           </span>
                         </div>
-                        <p className="text-sm whitespace-pre-wrap text-slate-700 dark:text-slate-300">{think}</p>
+                        <p className="text-sm whitespace-pre-wrap text-slate-700 dark:text-slate-300">
+                          {think}
+                        </p>
 
                         {message.actions?.[idx] && (
                           <details className="mt-2 text-xs">
@@ -496,7 +505,9 @@ export function DevicePanel({
                 ) : (
                   <div className="max-w-[75%]">
                     <div className="chat-bubble-user px-4 py-3">
-                      <p className="whitespace-pre-wrap text-white dark:text-white">{message.content}</p>
+                      <p className="whitespace-pre-wrap text-white dark:text-white">
+                        {message.content}
+                      </p>
                     </div>
                     <p className="text-xs text-slate-400 dark:text-slate-500 mt-1 text-right">
                       {message.timestamp.toLocaleTimeString()}
@@ -504,8 +515,9 @@ export function DevicePanel({
                   </div>
                 )}
               </div>
-            ))}
-            <div ref={messagesEndRef} />
+            ))
+          )}
+          <div ref={messagesEndRef} />
         </div>
 
         {/* Input area */}
@@ -646,7 +658,9 @@ export function DevicePanel({
                 'error'
               )
             }
-            onSwipeSuccess={() => showFeedback(t.devicePanel.swiped, 2000, 'swipe')}
+            onSwipeSuccess={() =>
+              showFeedback(t.devicePanel.swiped, 2000, 'swipe')
+            }
             onSwipeError={error =>
               showFeedback(
                 t.devicePanel.swipeError.replace('{error}', error),
