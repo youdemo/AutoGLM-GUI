@@ -32,12 +32,12 @@ import {
   EyeOff,
   Server,
 } from 'lucide-react';
+import { useTranslation } from '../lib/i18n-context';
 
 // 预设配置选项
 const PRESET_CONFIGS = [
   {
-    name: '智谱 BigModel',
-    description: '智谱 AI 提供的 API 服务',
+    name: 'bigmodel',
     config: {
       base_url: 'https://open.bigmodel.cn/api/paas/v4',
       model_name: 'autoglm-phone',
@@ -45,8 +45,7 @@ const PRESET_CONFIGS = [
     },
   },
   {
-    name: 'ModelScope',
-    description: '魔搭社区提供的 API 服务',
+    name: 'modelscope',
     config: {
       base_url: 'https://api-inference.modelscope.cn/v1',
       model_name: 'ZhipuAI/AutoGLM-Phone-9B',
@@ -54,8 +53,7 @@ const PRESET_CONFIGS = [
     },
   },
   {
-    name: '自建服务',
-    description: 'vLLM / SGLang 等自建服务',
+    name: 'custom',
     config: {
       base_url: '',
       model_name: 'autoglm-phone-9b',
@@ -69,6 +67,7 @@ export const Route = createFileRoute('/chat')({
 });
 
 function ChatComponent() {
+  const t = useTranslation();
   const [devices, setDevices] = useState<Device[]>([]);
   const [currentDeviceId, setCurrentDeviceId] = useState<string>('');
   const [toast, setToast] = useState<{
@@ -168,7 +167,7 @@ function ChatComponent() {
 
   const handleSaveConfig = async () => {
     if (!tempConfig.base_url) {
-      showToast('Base URL is required', 'error');
+      showToast(t.chat.baseUrlRequired, 'error');
       return;
     }
 
@@ -185,7 +184,7 @@ function ChatComponent() {
         api_key: tempConfig.api_key || undefined,
       });
       setShowConfig(false);
-      showToast('Configuration saved', 'success');
+      showToast(t.toasts.configSaved, 'success');
     } catch (err) {
       console.error('Failed to save config:', err);
       showToast(
@@ -200,12 +199,15 @@ function ChatComponent() {
       const res = await connectWifi({ device_id: deviceId });
       if (res.success && res.device_id) {
         setCurrentDeviceId(res.device_id);
-        showToast('WiFi connected', 'success');
+        showToast(t.toasts.wifiConnected, 'success');
       } else if (!res.success) {
-        showToast(res.message || res.error || 'Connection failed', 'error');
+        showToast(
+          res.message || res.error || t.toasts.connectionFailed,
+          'error'
+        );
       }
     } catch (e) {
-      showToast('WiFi connection error', 'error');
+      showToast(t.toasts.wifiConnectionError, 'error');
       console.error('Connect WiFi error:', e);
     }
   };
@@ -214,12 +216,15 @@ function ChatComponent() {
     try {
       const res = await disconnectWifi(deviceId);
       if (res.success) {
-        showToast('WiFi disconnected', 'success');
+        showToast(t.toasts.wifiDisconnected, 'success');
       } else {
-        showToast(res.message || res.error || 'Disconnect failed', 'error');
+        showToast(
+          res.message || res.error || t.toasts.disconnectFailed,
+          'error'
+        );
       }
     } catch (e) {
-      showToast('WiFi disconnect error', 'error');
+      showToast(t.toasts.wifiDisconnectError, 'error');
       console.error('Disconnect WiFi error:', e);
     }
   };
@@ -240,17 +245,17 @@ function ChatComponent() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Settings className="w-5 h-5 text-[#1d9bf0]" />
-              Configuration
+              {t.chat.configuration}
             </DialogTitle>
-            <DialogDescription>
-              Configure your API settings to get started
-            </DialogDescription>
+            <DialogDescription>{t.chat.configureApi}</DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4 py-4">
             {/* 预设配置选项 */}
             <div className="space-y-2">
-              <Label className="text-sm font-medium">选择预设配置</Label>
+              <Label className="text-sm font-medium">
+                {t.chat.selectPreset}
+              </Label>
               <div className="grid grid-cols-1 gap-2">
                 {PRESET_CONFIGS.map(preset => (
                   <button
@@ -265,8 +270,8 @@ function ChatComponent() {
                     }
                     className={`text-left p-3 rounded-lg border transition-all ${
                       tempConfig.base_url === preset.config.base_url &&
-                      (preset.name !== '自建服务' ||
-                        (preset.name === '自建服务' &&
+                      (preset.name !== 'custom' ||
+                        (preset.name === 'custom' &&
                           tempConfig.base_url === ''))
                         ? 'border-[#1d9bf0] bg-[#1d9bf0]/5'
                         : 'border-slate-200 dark:border-slate-700 hover:border-[#1d9bf0]/50 hover:bg-slate-50 dark:hover:bg-slate-800/50'
@@ -276,19 +281,27 @@ function ChatComponent() {
                       <Server
                         className={`w-4 h-4 ${
                           tempConfig.base_url === preset.config.base_url &&
-                          (preset.name !== '自建服务' ||
-                            (preset.name === '自建服务' &&
+                          (preset.name !== 'custom' ||
+                            (preset.name === 'custom' &&
                               tempConfig.base_url === ''))
                             ? 'text-[#1d9bf0]'
                             : 'text-slate-400'
                         }`}
                       />
                       <span className="font-medium text-sm text-slate-900 dark:text-slate-100">
-                        {preset.name}
+                        {
+                          t.presetConfigs[
+                            preset.name as keyof typeof t.presetConfigs
+                          ].name
+                        }
                       </span>
                     </div>
                     <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 ml-6">
-                      {preset.description}
+                      {
+                        t.presetConfigs[
+                          preset.name as keyof typeof t.presetConfigs
+                        ].description
+                      }
                     </p>
                   </button>
                 ))}
@@ -296,7 +309,7 @@ function ChatComponent() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="base_url">Base URL *</Label>
+              <Label htmlFor="base_url">{t.chat.baseUrl} *</Label>
               <Input
                 id="base_url"
                 value={tempConfig.base_url}
@@ -308,13 +321,13 @@ function ChatComponent() {
               {!tempConfig.base_url && (
                 <p className="text-xs text-red-500 flex items-center gap-1">
                   <AlertCircle className="w-3 h-3" />
-                  Base URL is required
+                  {t.chat.baseUrlRequired}
                 </p>
               )}
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="api_key">API Key</Label>
+              <Label htmlFor="api_key">{t.chat.apiKey}</Label>
               <div className="relative">
                 <Input
                   id="api_key"
@@ -343,7 +356,7 @@ function ChatComponent() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="model_name">Model Name</Label>
+              <Label htmlFor="model_name">{t.chat.modelName}</Label>
               <Input
                 id="model_name"
                 value={tempConfig.model_name}
@@ -369,11 +382,11 @@ function ChatComponent() {
                 }
               }}
             >
-              Cancel
+              {t.chat.cancel}
             </Button>
             <Button onClick={handleSaveConfig} variant="twitter">
               <CheckCircle2 className="w-4 h-4 mr-2" />
-              Save Configuration
+              {t.chat.saveConfig}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -410,10 +423,10 @@ function ChatComponent() {
                 </svg>
               </div>
               <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100 mb-2">
-                Welcome to AutoGLM
+                {t.chat.welcomeTitle}
               </h3>
               <p className="text-slate-500 dark:text-slate-400">
-                Connect an ADB device to get started
+                {t.chat.connectDevice}
               </p>
             </div>
           </div>

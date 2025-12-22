@@ -3,6 +3,7 @@ import { Wifi, WifiOff, CheckCircle2, Smartphone, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ConfirmDialog } from './ConfirmDialog';
+import { useTranslation } from '../lib/i18n-context';
 
 interface DeviceCardProps {
   id: string;
@@ -27,6 +28,7 @@ export function DeviceCard({
   onConnectWifi,
   onDisconnectWifi,
 }: DeviceCardProps) {
+  const t = useTranslation();
   const isOnline = status === 'device';
   const isUsb = connectionType === 'usb';
   const isRemote = connectionType === 'remote';
@@ -123,7 +125,7 @@ export function DeviceCard({
                     : 'text-slate-700 dark:text-slate-300'
                 }`}
               >
-                {model || 'Unknown Device'}
+                {model || t.deviceCard.unknownDevice}
               </span>
             </div>
             <span
@@ -150,7 +152,7 @@ export function DeviceCard({
                     ? 'text-white hover:bg-white/20'
                     : 'text-slate-400 hover:text-[#1d9bf0] hover:bg-slate-100 dark:hover:bg-slate-800'
                 }`}
-                title="Connect via WiFi"
+                title={t.deviceCard.connectViaWifi}
               >
                 {loading ? (
                   <Loader2 className="w-4 h-4 animate-spin" />
@@ -171,7 +173,7 @@ export function DeviceCard({
                     ? 'text-white hover:bg-white/20'
                     : 'text-slate-400 hover:text-red-500 hover:bg-slate-100 dark:hover:bg-slate-800'
                 }`}
-                title="Disconnect WiFi"
+                title={t.deviceCard.disconnectWifi}
               >
                 {loading ? (
                   <Loader2 className="w-4 h-4 animate-spin" />
@@ -190,7 +192,7 @@ export function DeviceCard({
                 }`}
               >
                 <CheckCircle2 className="w-3 h-3 mr-1" />
-                Ready
+                {t.deviceCard.ready}
               </Badge>
             )}
           </div>
@@ -199,16 +201,16 @@ export function DeviceCard({
 
       <ConfirmDialog
         isOpen={showWifiConfirm}
-        title="Connect via WiFi"
-        content="Switch to WiFi connection? Ensure your device and computer are on the same network."
+        title={t.deviceCard.connectWifiTitle}
+        content={t.deviceCard.connectWifiContent}
         onConfirm={handleConfirmWifi}
         onCancel={() => setShowWifiConfirm(false)}
       />
 
       <ConfirmDialog
         isOpen={showDisconnectConfirm}
-        title="Disconnect WiFi"
-        content="Are you sure you want to disconnect WiFi?"
+        title={t.deviceCard.disconnectWifiTitle}
+        content={t.deviceCard.disconnectWifiContent}
         onConfirm={handleConfirmDisconnect}
         onCancel={() => setShowDisconnectConfirm(false)}
       />

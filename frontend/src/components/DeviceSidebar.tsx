@@ -10,6 +10,7 @@ import { DeviceCard } from './DeviceCard';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import type { Device } from '../api';
+import { useTranslation } from '../lib/i18n-context';
 
 const getInitialCollapsedState = (): boolean => {
   try {
@@ -38,6 +39,7 @@ export function DeviceSidebar({
   onConnectWifi,
   onDisconnectWifi,
 }: DeviceSidebarProps) {
+  const t = useTranslation();
   const [isCollapsed, setIsCollapsed] = useState(getInitialCollapsedState);
 
   useEffect(() => {
@@ -98,7 +100,10 @@ export function DeviceSidebar({
                 AutoGLM
               </h2>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                {devices.length} {devices.length === 1 ? 'device' : 'devices'}
+                {devices.length}{' '}
+                {devices.length === 1
+                  ? t.deviceSidebar.devices
+                  : t.deviceSidebar.devices}
               </p>
             </div>
           </div>
@@ -124,10 +129,10 @@ export function DeviceSidebar({
                 <Plug className="h-8 w-8 text-slate-400" />
               </div>
               <p className="mt-4 font-medium text-slate-900 dark:text-slate-100">
-                No devices connected
+                {t.deviceSidebar.noDevicesConnected}
               </p>
               <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                Connect an ADB device to get started
+                {t.deviceSidebar.clickToRefresh}
               </p>
             </div>
           ) : (
@@ -162,7 +167,7 @@ export function DeviceSidebar({
             className="w-full justify-start gap-2 rounded-full border-slate-200 dark:border-slate-700"
           >
             <Settings className="h-4 w-4" />
-            Settings
+            {t.deviceSidebar.settings}
           </Button>
         </div>
       </div>

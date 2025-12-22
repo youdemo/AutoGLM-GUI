@@ -22,6 +22,7 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
+import { useTranslation } from '../lib/i18n-context';
 
 interface Message {
   id: string;
@@ -55,6 +56,7 @@ export function DevicePanel({
   config,
   isConfigured,
 }: DevicePanelProps) {
+  const t = useTranslation();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
@@ -357,7 +359,7 @@ export function DevicePanel({
             {!isConfigured && (
               <Badge variant="warning">
                 <AlertCircle className="w-3 h-3 mr-1" />
-                Configure first
+                {t.devicePanel.noConfig}
               </Badge>
             )}
 
@@ -368,12 +370,12 @@ export function DevicePanel({
                 size="sm"
                 variant="twitter"
               >
-                Initialize
+                {t.devicePanel.initializing}
               </Button>
             ) : (
               <Badge variant="success">
                 <CheckCircle2 className="w-3 h-3 mr-1" />
-                Ready
+                {t.devicePanel.ready}
               </Badge>
             )}
 
@@ -405,10 +407,10 @@ export function DevicePanel({
                 <Sparkles className="h-8 w-8 text-slate-400" />
               </div>
               <p className="font-medium text-slate-900 dark:text-slate-100">
-                Ready to help
+                {t.devicePanel.readyToHelp}
               </p>
               <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                Describe what you want to do on your phone
+                {t.devicePanel.describeTask}
               </p>
             </div>
           ) : null}
@@ -514,10 +516,10 @@ export function DevicePanel({
               onKeyDown={handleInputKeyDown}
               placeholder={
                 !isConfigured
-                  ? 'Please configure first'
+                  ? t.devicePanel.configureFirst
                   : !initialized
-                    ? 'Initialize device first'
-                    : 'What would you like to do? (Cmd+Enter to send)'
+                    ? t.devicePanel.initDeviceFirst
+                    : t.devicePanel.whatToDo
               }
               disabled={loading}
               className="flex-1 min-h-[40px] max-h-[120px] resize-none"
@@ -563,7 +565,7 @@ export function DevicePanel({
                   : 'text-slate-300 hover:text-white hover:bg-slate-800'
               }`}
             >
-              Auto
+              {t.devicePanel.auto}
             </Button>
             <Button
               variant="ghost"
@@ -576,7 +578,7 @@ export function DevicePanel({
               }`}
             >
               <Video className="w-3 h-3 mr-1" />
-              Video
+              {t.devicePanel.video}
             </Button>
             <Button
               variant="ghost"
@@ -589,7 +591,7 @@ export function DevicePanel({
               }`}
             >
               <ImageIcon className="w-3 h-3 mr-1" />
-              Image
+              {t.devicePanel.image}
             </Button>
           </div>
         </div>
@@ -600,17 +602,17 @@ export function DevicePanel({
             variant="secondary"
             className="bg-slate-900/90 text-slate-300 border border-slate-700"
           >
-            {displayMode === 'auto' && 'Auto'}
+            {displayMode === 'auto' && t.devicePanel.auto}
             {displayMode === 'video' && (
               <>
                 <MonitorPlay className="w-3 h-3 mr-1" />
-                Video
+                {t.devicePanel.video}
               </>
             )}
             {displayMode === 'screenshot' && (
               <>
                 <ImageIcon className="w-3 h-3 mr-1" />
-                Image (0.5s 刷新)
+                {t.devicePanel.imageRefresh}
               </>
             )}
           </Badge>
@@ -631,10 +633,20 @@ export function DevicePanel({
             className="w-full h-full"
             enableControl={true}
             onFallback={handleFallback}
-            onTapSuccess={() => showFeedback('Tapped', 2000)}
-            onTapError={error => showFeedback(`Error: ${error}`, 3000)}
-            onSwipeSuccess={() => showFeedback('Swiped', 2000)}
-            onSwipeError={error => showFeedback(`Swipe error: ${error}`, 3000)}
+            onTapSuccess={() => showFeedback(t.devicePanel.tapped, 2000)}
+            onTapError={error =>
+              showFeedback(
+                t.devicePanel.tapError.replace('{error}', error),
+                3000
+              )
+            }
+            onSwipeSuccess={() => showFeedback(t.devicePanel.swiped, 2000)}
+            onSwipeError={error =>
+              showFeedback(
+                t.devicePanel.swipeError.replace('{error}', error),
+                3000
+              )
+            }
             onStreamReady={handleVideoStreamReady}
             fallbackTimeout={100000}
           />
@@ -656,20 +668,20 @@ export function DevicePanel({
                 />
                 {screenshot.is_sensitive && (
                   <div className="absolute top-12 right-2 px-2 py-1 bg-yellow-500 text-white text-xs rounded-lg">
-                    Sensitive content
+                    {t.devicePanel.sensitiveContent}
                   </div>
                 )}
               </div>
             ) : screenshot?.error ? (
               <div className="text-center text-red-400">
                 <AlertCircle className="w-8 h-8 mx-auto mb-2" />
-                <p className="font-medium">Screenshot failed</p>
+                <p className="font-medium">{t.devicePanel.screenshotFailed}</p>
                 <p className="text-xs mt-1 opacity-60">{screenshot.error}</p>
               </div>
             ) : (
               <div className="text-center text-slate-400">
                 <Loader2 className="w-8 h-8 mx-auto mb-2 animate-spin" />
-                <p className="text-sm">Loading...</p>
+                <p className="text-sm">{t.devicePanel.loading}</p>
               </div>
             )}
           </div>
