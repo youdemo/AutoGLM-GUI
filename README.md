@@ -4,6 +4,7 @@ AutoGLM 手机助手的现代化 Web 图形界面 - 让 AI 自动化操作 Andro
 
 ![Python](https://img.shields.io/badge/python-3.10+-blue.svg)
 ![License](https://img.shields.io/badge/license-Apache%202.0-green.svg)
+[![PyPI](https://img.shields.io/pypi/v/autoglm-gui)](https://pypi.org/project/autoglm-gui/)
 <br/>
   <a href="https://qm.qq.com/q/J5eAs9tn0W" target="__blank">
     <strong>欢迎加入讨论交流群</strong>
@@ -79,7 +80,7 @@ pip install autoglm-gui
 autoglm-gui --base-url http://localhost:8080/v1
 ```
 
-也可以使用 uvx 免安装启动（需已安装 uv，[安装教程](https://docs.astral.sh/uv/getting-started/installation/)）：
+也可以使用 uvx 免安装启动，自动启动最新版（需已安装 uv，[安装教程](https://docs.astral.sh/uv/getting-started/installation/)）：
 
 ```bash
 uvx autoglm-gui --base-url http://localhost:8080/v1
@@ -101,6 +102,27 @@ uv run autoglm-gui --base-url http://localhost:8080/v1
 ```
 
 启动后，在浏览器中打开 http://localhost:8000 即可开始使用！
+
+## 🔄 升级指南
+
+### 检查当前版本
+
+```bash
+# 查看已安装的版本
+pip show autoglm-gui
+
+# 或使用命令行参数
+autoglm-gui --version
+```
+
+### 升级到最新版本
+
+**使用 pip 升级：**
+
+```bash
+# 升级到最新版本
+pip install --upgrade autoglm-gui
+```
 
 ## 📖 使用说明
 
