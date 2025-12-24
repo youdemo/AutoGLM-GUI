@@ -164,6 +164,18 @@ export interface WiFiDisconnectResponse {
   error?: string;
 }
 
+export interface WiFiManualConnectRequest {
+  ip: string;
+  port?: number;
+}
+
+export interface WiFiManualConnectResponse {
+  success: boolean;
+  message: string;
+  device_id?: string;
+  error?: string;
+}
+
 export async function listDevices(): Promise<DeviceListResponse> {
   const res = await axios.get<DeviceListResponse>('/api/devices');
   return res.data;
@@ -194,6 +206,16 @@ export async function disconnectWifi(
     }
   );
   return response.data;
+}
+
+export async function connectWifiManual(
+  payload: WiFiManualConnectRequest
+): Promise<WiFiManualConnectResponse> {
+  const res = await axios.post<WiFiManualConnectResponse>(
+    '/api/devices/connect_wifi_manual',
+    payload
+  );
+  return res.data;
 }
 
 export async function initAgent(

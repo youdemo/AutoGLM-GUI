@@ -30,11 +30,19 @@ export const zh = {
   deviceSidebar: {
     devices: '设备',
     settings: '设置',
-    addDevice: '添加设备',
+    addDevice: '添加无线设备',
+    addDeviceTooltip:
+      '手机已开启无线调试时，可在此输入 IP 地址直接连接，无需有线连接',
     connectWifi: '连接 WiFi',
     disconnectWifi: '断开 WiFi',
     noDevicesConnected: '未连接设备',
     clickToRefresh: '点击刷新扫描设备',
+    manualConnectTitle: '连接 WiFi 设备',
+    manualConnectDescription: '输入设备的 IP 地址和端口',
+    ipAddress: 'IP 地址',
+    port: '端口',
+    invalidIpError: 'IP 地址格式无效',
+    invalidPortError: '端口必须在 1-65535 之间',
   },
   devicePanel: {
     noConfig: '请先配置您的 API 设置',
@@ -106,5 +114,7 @@ export const zh = {
     disconnectFailed: '断开连接失败',
     wifiConnectionError: 'WiFi 连接错误',
     wifiDisconnectError: 'WiFi 断开连接错误',
+    wifiManualConnected: 'WiFi 设备已连接',
+    wifiManualConnectError: '连接 WiFi 设备失败',
   },
 };

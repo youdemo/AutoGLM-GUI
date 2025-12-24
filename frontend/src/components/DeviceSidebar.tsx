@@ -5,11 +5,29 @@ import {
   ChevronLeft,
   ChevronRight,
   Plug,
+  Plus,
+  Info,
 } from 'lucide-react';
 import { DeviceCard } from './DeviceCard';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from '@/components/ui/dialog';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import type { Device } from '../api';
+import { connectWifiManual } from '../api';
 import { useTranslation } from '../lib/i18n-context';
 
 const getInitialCollapsedState = (): boolean => {
@@ -42,6 +60,14 @@ export function DeviceSidebar({
   const t = useTranslation();
   const [isCollapsed, setIsCollapsed] = useState(getInitialCollapsedState);
 
+  // Manual WiFi connection
+  const [showManualConnect, setShowManualConnect] = useState(false);
+  const [manualConnectIp, setManualConnectIp] = useState('');
+  const [manualConnectPort, setManualConnectPort] = useState('5555');
+  const [ipError, setIpError] = useState('');
+  const [portError, setPortError] = useState('');
+  const [isConnecting, setIsConnecting] = useState(false);
+
   useEffect(() => {
     localStorage.setItem('sidebar-collapsed', JSON.stringify(isCollapsed));
   }, [isCollapsed]);
@@ -59,6 +85,62 @@ export function DeviceSidebar({
 
   const toggleCollapse = () => {
     setIsCollapsed(!isCollapsed);
+  };
+
+  // Validation helpers
+  const validateIp = (ip: string): boolean => {
+    const ipPattern = /^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$/;
+    if (!ipPattern.test(ip)) return false;
+    const parts = ip.split('.');
+    return parts.every(part => {
+      const num = parseInt(part, 10);
+      return num >= 0 && num <= 255;
+    });
+  };
+
+  const validatePort = (port: string): boolean => {
+    const num = parseInt(port, 10);
+    return !isNaN(num) && num >= 1 && num <= 65535;
+  };
+
+  const handleManualConnect = async () => {
+    setIpError('');
+    setPortError('');
+
+    let hasError = false;
+
+    if (!validateIp(manualConnectIp)) {
+      setIpError(t.deviceSidebar.invalidIpError);
+      hasError = true;
+    }
+
+    if (!validatePort(manualConnectPort)) {
+      setPortError(t.deviceSidebar.invalidPortError);
+      hasError = true;
+    }
+
+    if (hasError) return;
+
+    setIsConnecting(true);
+    try {
+      const result = await connectWifiManual({
+        ip: manualConnectIp,
+        port: parseInt(manualConnectPort, 10),
+      });
+
+      if (result.success) {
+        setShowManualConnect(false);
+        setManualConnectIp('');
+        setManualConnectPort('5555');
+        // Device list will auto-refresh via polling
+      } else {
+        setIpError(result.message || t.toasts.wifiManualConnectError);
+      }
+    } catch {
+      setIpError(t.toasts.wifiManualConnectError);
+    } finally {
+      setIsConnecting(false);
+    }
   };
 
   return (
@@ -160,7 +242,32 @@ export function DeviceSidebar({
         <Separator className="mx-4" />
 
         {/* Bottom actions */}
-        <div className="p-3">
+        <div className="p-3 space-y-2">
+          <Button
+            variant="outline"
+            onClick={() => setShowManualConnect(true)}
+            className="w-full justify-start gap-2 rounded-full border-slate-200 dark:border-slate-700"
+          >
+            <Plus className="h-4 w-4" />
+            <span className="flex-1 text-left">
+              {t.deviceSidebar.addDevice}
+            </span>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <div>
+                  <Info className="h-3.5 w-3.5 text-slate-400 flex-shrink-0" />
+                </div>
+              </TooltipTrigger>
+              <TooltipContent
+                side="right"
+                align="center"
+                sideOffset={5}
+                className="max-w-xs"
+              >
+                <p>{t.deviceSidebar.addDeviceTooltip}</p>
+              </TooltipContent>
+            </Tooltip>
+          </Button>
           <Button
             variant="outline"
             onClick={onOpenConfig}
@@ -170,6 +277,61 @@ export function DeviceSidebar({
             {t.deviceSidebar.settings}
           </Button>
         </div>
+
+        {/* Manual WiFi Connect Dialog */}
+        <Dialog open={showManualConnect} onOpenChange={setShowManualConnect}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>{t.deviceSidebar.manualConnectTitle}</DialogTitle>
+              <DialogDescription>
+                {t.deviceSidebar.manualConnectDescription}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <div className="space-y-2">
+                <Label htmlFor="ip">{t.deviceSidebar.ipAddress}</Label>
+                <Input
+                  id="ip"
+                  placeholder="192.168.1.100"
+                  value={manualConnectIp}
+                  onChange={e => setManualConnectIp(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && handleManualConnect()}
+                  className={ipError ? 'border-red-500' : ''}
+                />
+                {ipError && <p className="text-sm text-red-500">{ipError}</p>}
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="port">{t.deviceSidebar.port}</Label>
+                <Input
+                  id="port"
+                  type="number"
+                  value={manualConnectPort}
+                  onChange={e => setManualConnectPort(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && handleManualConnect()}
+                  className={portError ? 'border-red-500' : ''}
+                />
+                {portError && (
+                  <p className="text-sm text-red-500">{portError}</p>
+                )}
+              </div>
+            </div>
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setShowManualConnect(false);
+                  setIpError('');
+                  setPortError('');
+                }}
+              >
+                {t.common.cancel}
+              </Button>
+              <Button onClick={handleManualConnect} disabled={isConnecting}>
+                {isConnecting ? t.common.loading : t.common.confirm}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </>
   );

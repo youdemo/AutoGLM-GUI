@@ -30,11 +30,19 @@ export const en = {
   deviceSidebar: {
     devices: 'Devices',
     settings: 'Settings',
-    addDevice: 'Add Device',
+    addDevice: 'Add Wireless Device',
+    addDeviceTooltip:
+      'Connect directly via IP when wireless debugging is enabled on the phone, no USB cable needed',
     connectWifi: 'Connect WiFi',
     disconnectWifi: 'Disconnect WiFi',
     noDevicesConnected: 'No devices connected',
     clickToRefresh: 'Click refresh to scan devices',
+    manualConnectTitle: 'Connect to WiFi Device',
+    manualConnectDescription: 'Enter the IP address and port of the device',
+    ipAddress: 'IP Address',
+    port: 'Port',
+    invalidIpError: 'Invalid IP address format',
+    invalidPortError: 'Port must be between 1 and 65535',
   },
   devicePanel: {
     noConfig: 'Please configure your API settings first',
@@ -107,5 +115,7 @@ export const en = {
     disconnectFailed: 'Disconnect failed',
     wifiConnectionError: 'WiFi connection error',
     wifiDisconnectError: 'WiFi disconnect error',
+    wifiManualConnected: 'WiFi device connected',
+    wifiManualConnectError: 'Failed to connect to WiFi device',
   },
 };

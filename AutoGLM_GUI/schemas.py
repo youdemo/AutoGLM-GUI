@@ -177,6 +177,22 @@ class WiFiDisconnectResponse(BaseModel):
     error: str | None = None
 
 
+class WiFiManualConnectRequest(BaseModel):
+    """手动连接 WiFi 请求 (无需 USB)."""
+
+    ip: str  # IP 地址
+    port: int = 5555  # 端口，默认 5555
+
+
+class WiFiManualConnectResponse(BaseModel):
+    """手动连接 WiFi 响应."""
+
+    success: bool
+    message: str
+    device_id: str | None = None  # 连接后的设备 ID (ip:port)
+    error: str | None = None
+
+
 class VersionCheckResponse(BaseModel):
     """Version update check response."""
 

@@ -10,6 +10,8 @@ from AutoGLM_GUI.schemas import (
     WiFiConnectResponse,
     WiFiDisconnectRequest,
     WiFiDisconnectResponse,
+    WiFiManualConnectRequest,
+    WiFiManualConnectResponse,
 )
 from AutoGLM_GUI.state import agents
 
@@ -116,4 +118,51 @@ def disconnect_wifi(request: WiFiDisconnectRequest) -> WiFiDisconnectResponse:
         success=ok,
         message=msg,
         error=None if ok else "disconnect_failed",
+    )
+
+
+@router.post(
+    "/api/devices/connect_wifi_manual", response_model=WiFiManualConnectResponse
+)
+def connect_wifi_manual(
+    request: WiFiManualConnectRequest,
+) -> WiFiManualConnectResponse:
+    """手动连接到 WiFi 设备 (直接连接,无需 USB)."""
+    import re
+
+    from phone_agent.adb import ADBConnection
+
+    # IP 格式验证
+    ip_pattern = r"^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$"
+    if not re.match(ip_pattern, request.ip):
+        return WiFiManualConnectResponse(
+            success=False,
+            message="Invalid IP address format",
+            error="invalid_ip",
+        )
+
+    # 端口范围验证
+    if not (1 <= request.port <= 65535):
+        return WiFiManualConnectResponse(
+            success=False,
+            message="Port must be between 1 and 65535",
+            error="invalid_port",
+        )
+
+    conn = ADBConnection()
+    address = f"{request.ip}:{request.port}"
+
+    # 直接连接
+    ok, msg = conn.connect(address)
+    if not ok:
+        return WiFiManualConnectResponse(
+            success=False,
+            message=msg or f"Failed to connect to {address}",
+            error="connect_failed",
+        )
+
+    return WiFiManualConnectResponse(
+        success=True,
+        message=f"Successfully connected to {address}",
+        device_id=address,
     )
