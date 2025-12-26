@@ -4,6 +4,7 @@ from fastapi import APIRouter
 
 from AutoGLM_GUI.adb_plus import get_wifi_ip, get_device_serial, pair_device
 from AutoGLM_GUI.adb_plus.qr_pair import qr_pairing_manager
+from AutoGLM_GUI.logger import logger
 
 from AutoGLM_GUI.schemas import (
     DeviceListResponse,
@@ -29,28 +30,18 @@ router = APIRouter()
 @router.get("/api/devices", response_model=DeviceListResponse)
 def list_devices() -> DeviceListResponse:
     """列出所有 ADB 设备。"""
-    from phone_agent.adb import list_devices as adb_list, ADBConnection
+    from AutoGLM_GUI.device_manager import DeviceManager
 
-    adb_devices = adb_list()
-    conn = ADBConnection()
+    device_manager = DeviceManager.get_instance()
 
-    devices_with_serial = []
-    for d in adb_devices:
-        # 使用 adb_plus 的 get_device_serial 获取真实序列号
-        serial = get_device_serial(d.device_id, conn.adb_path)
+    # Fallback: If polling hasn't started, do synchronous fetch
+    if not device_manager._poll_thread or not device_manager._poll_thread.is_alive():
+        logger.warning("Polling not started, performing synchronous device fetch")
+        device_manager.force_refresh()
 
-        devices_with_serial.append(
-            {
-                "id": d.device_id,
-                "model": d.model or "Unknown",
-                "status": d.status,
-                "connection_type": d.connection_type.value,
-                "is_initialized": d.device_id in agents,
-                "serial": serial,  # 真实序列号
-            }
-        )
+    managed_devices = device_manager.get_devices()
 
-    return DeviceListResponse(devices=devices_with_serial)
+    return DeviceListResponse(devices=[d.to_api_dict() for d in managed_devices])
 
 
 @router.post("/api/devices/connect_wifi", response_model=WiFiConnectResponse)

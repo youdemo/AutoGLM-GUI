@@ -103,6 +103,11 @@ def init_agent(request: InitRequest) -> dict:
 
     agent_configs[device_id] = (model_config, agent_config)
 
+    # Notify DeviceManager of initialization status
+    from AutoGLM_GUI.device_manager import DeviceManager
+
+    DeviceManager.get_instance().update_initialization_status(device_id, True)
+
     return {
         "success": True,
         "device_id": device_id,

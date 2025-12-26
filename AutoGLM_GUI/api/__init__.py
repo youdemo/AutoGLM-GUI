@@ -65,6 +65,12 @@ def create_app() -> FastAPI:
         # Start QR pairing session cleanup task
         asyncio.create_task(qr_pairing_manager.cleanup_expired_sessions())
 
+        # Start device polling
+        from AutoGLM_GUI.device_manager import DeviceManager
+
+        device_manager = DeviceManager.get_instance()
+        device_manager.start_polling()
+
     static_dir = _get_static_dir()
     if static_dir is not None and static_dir.exists():
         assets_dir = static_dir / "assets"
