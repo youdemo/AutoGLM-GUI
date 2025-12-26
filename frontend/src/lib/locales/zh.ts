@@ -6,6 +6,8 @@ export const zh = {
     loading: '加载中...',
     error: '错误',
     success: '成功',
+    edit: '编辑',
+    delete: '删除',
   },
   footer: {
     starOnGitHub: '在 GitHub 上Star',
@@ -180,5 +182,20 @@ export const zh = {
   },
   navigation: {
     chat: '对话',
+    workflows: 'Workflows',
+  },
+  workflows: {
+    title: 'Workflow 管理',
+    createNew: '新建 Workflow',
+    create: '创建 Workflow',
+    edit: '编辑 Workflow',
+    name: '名称',
+    text: '任务内容',
+    namePlaceholder: '例如：订购霸王茶姬',
+    textPlaceholder: '例如：去美团点一杯霸王茶姬的伯牙绝弦，要去冰，加珍珠',
+    empty: '暂无 Workflow，点击右上角创建',
+    deleteConfirm: '确认删除此 Workflow？',
+    quickRun: '快速执行',
+    selectWorkflow: '选择 Workflow',
   },
 };

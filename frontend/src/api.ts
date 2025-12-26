@@ -568,3 +568,54 @@ export async function cancelQRPairing(
   );
   return res.data;
 }
+
+// ==================== Workflow API ====================
+
+export interface Workflow {
+  uuid: string;
+  name: string;
+  text: string;
+}
+
+export interface WorkflowListResponse {
+  workflows: Workflow[];
+}
+
+export interface WorkflowCreateRequest {
+  name: string;
+  text: string;
+}
+
+export interface WorkflowUpdateRequest {
+  name: string;
+  text: string;
+}
+
+export async function listWorkflows(): Promise<WorkflowListResponse> {
+  const res = await axios.get<WorkflowListResponse>('/api/workflows');
+  return res.data;
+}
+
+export async function getWorkflow(uuid: string): Promise<Workflow> {
+  const res = await axios.get<Workflow>(`/api/workflows/${uuid}`);
+  return res.data;
+}
+
+export async function createWorkflow(
+  request: WorkflowCreateRequest
+): Promise<Workflow> {
+  const res = await axios.post<Workflow>('/api/workflows', request);
+  return res.data;
+}
+
+export async function updateWorkflow(
+  uuid: string,
+  request: WorkflowUpdateRequest
+): Promise<Workflow> {
+  const res = await axios.put<Workflow>(`/api/workflows/${uuid}`, request);
+  return res.data;
+}
+
+export async function deleteWorkflow(uuid: string): Promise<void> {
+  await axios.delete(`/api/workflows/${uuid}`);
+}

@@ -13,7 +13,7 @@ from fastapi.staticfiles import StaticFiles
 from AutoGLM_GUI.version import APP_VERSION
 from AutoGLM_GUI.adb_plus.qr_pair import qr_pairing_manager
 
-from . import agents, control, devices, media, version
+from . import agents, control, devices, media, version, workflows
 
 
 def _get_static_dir() -> Path | None:
@@ -57,6 +57,7 @@ def create_app() -> FastAPI:
     app.include_router(control.router)
     app.include_router(media.router)
     app.include_router(version.router)
+    app.include_router(workflows.router)
 
     @app.on_event("startup")
     async def startup_event():

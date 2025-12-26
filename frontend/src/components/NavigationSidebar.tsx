@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link, useMatchRoute } from '@tanstack/react-router';
-import { MessageSquare, type LucideIcon } from 'lucide-react';
+import { MessageSquare, ListChecks, type LucideIcon } from 'lucide-react';
 import {
   Tooltip,
   TooltipTrigger,
@@ -29,6 +29,12 @@ export function NavigationSidebar({ className }: NavigationSidebarProps) {
       icon: MessageSquare,
       label: t.navigation.chat,
       path: '/chat',
+    },
+    {
+      id: 'workflows',
+      icon: ListChecks,
+      label: t.navigation.workflows,
+      path: '/workflows',
     },
   ];
 

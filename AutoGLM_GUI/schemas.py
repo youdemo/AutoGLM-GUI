@@ -1,6 +1,6 @@
 """Shared Pydantic models for the AutoGLM-GUI API."""
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class APIModelConfig(BaseModel):
@@ -272,3 +272,53 @@ class QRPairCancelResponse(BaseModel):
 
     success: bool
     message: str
+
+
+# Workflow Models
+
+
+class WorkflowBase(BaseModel):
+    """Workflow 基础模型."""
+
+    name: str
+    text: str
+
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, v: str) -> str:
+        """验证 name 非空."""
+        if not v or not v.strip():
+            raise ValueError("name cannot be empty")
+        return v.strip()
+
+    @field_validator("text")
+    @classmethod
+    def validate_text(cls, v: str) -> str:
+        """验证 text 非空."""
+        if not v or not v.strip():
+            raise ValueError("text cannot be empty")
+        return v.strip()
+
+
+class WorkflowCreate(WorkflowBase):
+    """创建 Workflow 请求."""
+
+    pass
+
+
+class WorkflowUpdate(WorkflowBase):
+    """更新 Workflow 请求."""
+
+    pass
+
+
+class WorkflowResponse(WorkflowBase):
+    """Workflow 响应."""
+
+    uuid: str
+
+
+class WorkflowListResponse(BaseModel):
+    """Workflow 列表响应."""
+
+    workflows: list[WorkflowResponse]

@@ -14,6 +14,7 @@ import {
   ChevronLeft,
   ChevronRight,
   History,
+  ListChecks,
 } from 'lucide-react';
 import { ScrcpyPlayer } from './ScrcpyPlayer';
 import type {
@@ -21,8 +22,15 @@ import type {
   StepEvent,
   DoneEvent,
   ErrorEvent,
+  Workflow,
 } from '../api';
-import { getScreenshot, initAgent, resetChat, sendMessageStream } from '../api';
+import {
+  getScreenshot,
+  initAgent,
+  resetChat,
+  sendMessageStream,
+  listWorkflows,
+} from '../api';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
@@ -94,6 +102,8 @@ export function DevicePanel({
   >('success');
   const [showHistoryPopover, setShowHistoryPopover] = useState(false);
   const [historyItems, setHistoryItems] = useState<HistoryItem[]>([]);
+  const [workflows, setWorkflows] = useState<Workflow[]>([]);
+  const [showWorkflowPopover, setShowWorkflowPopover] = useState(false);
   const feedbackTimeoutRef = useRef<number | null>(null);
 
   const showFeedback = (
@@ -402,6 +412,24 @@ export function DevicePanel({
       }
     };
   }, [deviceId]);
+
+  // Load workflows
+  useEffect(() => {
+    const loadWorkflows = async () => {
+      try {
+        const data = await listWorkflows();
+        setWorkflows(data.workflows);
+      } catch (error) {
+        console.error('Failed to load workflows:', error);
+      }
+    };
+    loadWorkflows();
+  }, []);
+
+  const handleExecuteWorkflow = (workflow: Workflow) => {
+    setInput(workflow.text);
+    setShowWorkflowPopover(false);
+  };
 
   useEffect(() => {
     if (!deviceId) return;
@@ -714,6 +742,52 @@ export function DevicePanel({
               className="flex-1 min-h-[40px] max-h-[120px] resize-none"
               rows={1}
             />
+            {/* Workflow Quick Run Button */}
+            <Popover
+              open={showWorkflowPopover}
+              onOpenChange={setShowWorkflowPopover}
+            >
+              <PopoverTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="h-10 w-10 flex-shrink-0"
+                >
+                  <ListChecks className="w-4 h-4" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent align="start" className="w-72 p-3">
+                <div className="space-y-2">
+                  <h4 className="font-medium text-sm">
+                    {t.workflows.selectWorkflow}
+                  </h4>
+                  {workflows.length === 0 ? (
+                    <p className="text-sm text-slate-500 dark:text-slate-400">
+                      {t.workflows.empty}
+                    </p>
+                  ) : (
+                    <ScrollArea className="h-64">
+                      <div className="space-y-1">
+                        {workflows.map(workflow => (
+                          <button
+                            key={workflow.uuid}
+                            onClick={() => handleExecuteWorkflow(workflow)}
+                            className="w-full text-left p-2 rounded hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                          >
+                            <div className="font-medium text-sm">
+                              {workflow.name}
+                            </div>
+                            <div className="text-xs text-slate-500 dark:text-slate-400 line-clamp-2">
+                              {workflow.text}
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    </ScrollArea>
+                  )}
+                </div>
+              </PopoverContent>
+            </Popover>
             <Button
               onClick={handleSend}
               disabled={loading || !input.trim()}

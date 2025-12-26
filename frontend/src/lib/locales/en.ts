@@ -6,6 +6,8 @@ export const en = {
     loading: 'Loading...',
     error: 'Error',
     success: 'Success',
+    edit: 'Edit',
+    delete: 'Delete',
   },
   footer: {
     starOnGitHub: 'Star on GitHub',
@@ -183,5 +185,20 @@ export const en = {
   },
   navigation: {
     chat: 'Chat',
+    workflows: 'Workflows',
+  },
+  workflows: {
+    title: 'Workflow Management',
+    createNew: 'New Workflow',
+    create: 'Create Workflow',
+    edit: 'Edit Workflow',
+    name: 'Name',
+    text: 'Task Content',
+    namePlaceholder: 'e.g., Order Milk Tea',
+    textPlaceholder: 'e.g., Go to Meituan and order a milk tea...',
+    empty: 'No workflows yet, click the button above to create',
+    deleteConfirm: 'Are you sure to delete this workflow?',
+    quickRun: 'Quick Run',
+    selectWorkflow: 'Select Workflow',
   },
 };
