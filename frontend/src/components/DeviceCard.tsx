@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
-import { Wifi, WifiOff, CheckCircle2, Smartphone, Loader2 } from 'lucide-react';
+import { Wifi, WifiOff, CheckCircle2, Smartphone, Loader2, XCircle, Clock } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ConfirmDialog } from './ConfirmDialog';
 import { useTranslation } from '../lib/i18n-context';
+import type { AgentStatus } from '../api';
 
 interface DeviceCardProps {
   id: string;
@@ -11,6 +12,7 @@ interface DeviceCardProps {
   status: string;
   connectionType?: string;
   isInitialized: boolean;
+  agent?: AgentStatus | null;
   isActive: boolean;
   onClick: () => void;
   onConnectWifi?: () => Promise<void>;
@@ -23,6 +25,7 @@ export function DeviceCard({
   status,
   connectionType,
   isInitialized,
+  agent,
   isActive,
   onClick,
   onConnectWifi,
@@ -183,20 +186,40 @@ export function DeviceCard({
               </Button>
             )}
 
-            {/* Initialization status badge */}
-            {isInitialized && (
+            {/* Agent status badge */}
+            {agent ? (
               <Badge
-                variant="success"
+                variant={
+                  agent.state === 'idle'
+                    ? 'success'
+                    : agent.state === 'busy'
+                      ? 'warning'
+                      : agent.state === 'error'
+                        ? 'destructive'
+                        : 'secondary'
+                }
                 className={`text-xs ${
                   isActive
-                    ? 'bg-green-500/10 text-green-600 dark:text-green-400'
+                    ? agent.state === 'idle'
+                      ? 'bg-green-500/10 text-green-600 dark:text-green-400'
+                      : agent.state === 'busy'
+                        ? 'bg-yellow-500/10 text-yellow-600 dark:text-yellow-400'
+                        : agent.state === 'error'
+                          ? 'bg-red-500/10 text-red-600 dark:text-red-400'
+                          : 'bg-slate-500/10 text-slate-600 dark:text-slate-400'
                     : ''
                 }`}
               >
-                <CheckCircle2 className="w-3 h-3 mr-1" />
-                {t.deviceCard.ready}
+                {agent.state === 'idle' && <CheckCircle2 className="w-3 h-3 mr-1" />}
+                {agent.state === 'busy' && <Loader2 className="w-3 h-3 mr-1 animate-spin" />}
+                {agent.state === 'error' && <XCircle className="w-3 h-3 mr-1" />}
+                {agent.state === 'initializing' && <Clock className="w-3 h-3 mr-1" />}
+                {agent.state === 'idle' && t.deviceCard.agentIdle}
+                {agent.state === 'busy' && t.deviceCard.agentBusy}
+                {agent.state === 'error' && t.deviceCard.agentError}
+                {agent.state === 'initializing' && t.deviceCard.agentInitializing}
               </Badge>
-            )}
+            ) : null}
           </div>
         </div>
       </div>

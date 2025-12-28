@@ -27,19 +27,26 @@ router = APIRouter()
 
 @router.get("/api/devices", response_model=DeviceListResponse)
 def list_devices() -> DeviceListResponse:
-    """列出所有 ADB 设备。"""
+    """列出所有 ADB 设备及 Agent 状态."""
     from AutoGLM_GUI.device_manager import DeviceManager
+    from AutoGLM_GUI.phone_agent_manager import PhoneAgentManager
 
     device_manager = DeviceManager.get_instance()
+    agent_manager = PhoneAgentManager.get_instance()
 
-    # Fallback: If polling hasn't started, do synchronous fetch
+    # Fallback: 如果轮询未启动,执行同步获取
     if not device_manager._poll_thread or not device_manager._poll_thread.is_alive():
         logger.warning("Polling not started, performing synchronous device fetch")
         device_manager.force_refresh()
 
     managed_devices = device_manager.get_devices()
 
-    return DeviceListResponse(devices=[d.to_api_dict() for d in managed_devices])
+    # 包含 Agent 状态
+    devices_with_agents = [
+        d.to_api_dict_with_agent(agent_manager) for d in managed_devices
+    ]
+
+    return DeviceListResponse(devices=devices_with_agents)
 
 
 @router.post("/api/devices/connect_wifi", response_model=WiFiConnectResponse)

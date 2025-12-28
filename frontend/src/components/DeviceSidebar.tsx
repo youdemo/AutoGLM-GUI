@@ -534,6 +534,7 @@ export function DeviceSidebar({
                 status={device.status}
                 connectionType={device.connection_type}
                 isInitialized={device.is_initialized}
+                agent={device.agent}
                 isActive={currentDeviceId === device.id}
                 onClick={() => onSelectDevice(device.id)}
                 onConnectWifi={async () => {

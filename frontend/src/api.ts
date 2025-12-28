@@ -1,12 +1,23 @@
 import axios from 'redaxios';
 
+export interface AgentStatus {
+  state: 'idle' | 'busy' | 'error' | 'initializing';
+  created_at: number;
+  last_used: number;
+  error_message: string | null;
+  model_name: string;
+}
+
 export interface Device {
   id: string;
   serial: string; // Hardware serial number (always present)
   model: string;
   status: string;
   connection_type: string;
-  is_initialized: boolean;
+  state: string;
+  is_available_only: boolean;
+  agent: AgentStatus | null; // Agent runtime status (null if not initialized)
+  is_initialized: boolean; // Backward compatibility (deprecated)
 }
 
 export interface DeviceListResponse {

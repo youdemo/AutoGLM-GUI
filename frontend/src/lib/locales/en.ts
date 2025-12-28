@@ -136,6 +136,10 @@ export const en = {
     connectViaWifi: 'Connect via WiFi',
     disconnectWifi: 'Disconnect WiFi',
     ready: 'Ready',
+    agentIdle: 'Idle',
+    agentBusy: 'Busy',
+    agentError: 'Error',
+    agentInitializing: 'Initializing',
     connectWifiTitle: 'Connect via WiFi',
     connectWifiContent:
       'Switch to WiFi connection? Ensure your device and computer are on the same network.',
