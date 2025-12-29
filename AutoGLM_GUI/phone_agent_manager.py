@@ -337,9 +337,54 @@ class PhoneAgentManager:
             if acquired:
                 self.release_device(device_id)
 
+    def _auto_initialize_agent(self, device_id: str) -> None:
+        """
+        使用全局配置自动初始化 agent（内部方法，需在 manager_lock 内调用）.
+
+        Args:
+            device_id: 设备标识符
+
+        Raises:
+            AgentInitializationError: 如果配置不完整或初始化失败
+        """
+        from phone_agent.agent import AgentConfig
+        from phone_agent.model import ModelConfig
+
+        from AutoGLM_GUI.config import config
+        from AutoGLM_GUI.config_manager import config_manager
+
+        logger.info(f"Auto-initializing agent for device {device_id}...")
+
+        # 热重载配置
+        config_manager.load_file_config()
+        config_manager.sync_to_env()
+        config.refresh_from_env()
+
+        effective_config = config_manager.get_effective_config()
+
+        if not effective_config.base_url:
+            raise AgentInitializationError(
+                f"Cannot auto-initialize agent for {device_id}: base_url not configured. "
+                f"Please configure base_url via /api/config or call /api/init explicitly."
+            )
+
+        model_config = ModelConfig(
+            base_url=effective_config.base_url,
+            api_key=effective_config.api_key,
+            model_name=effective_config.model_name,
+        )
+
+        agent_config = AgentConfig(device_id=device_id)
+
+        # 调用 initialize_agent（RLock 支持重入，不会死锁）
+        self.initialize_agent(device_id, model_config, agent_config)
+        logger.info(f"Agent auto-initialized for device {device_id}")
+
     def get_agent(self, device_id: str) -> PhoneAgent:
         """
         Get initialized agent for a device.
+
+        Auto-initializes the agent using global config if not already initialized.
 
         Args:
             device_id: Device identifier
@@ -348,16 +393,14 @@ class PhoneAgentManager:
             PhoneAgent: Agent instance
 
         Raises:
-            AgentNotInitializedError: If agent not initialized
+            AgentInitializationError: If agent not initialized and auto-init fails
         """
         from AutoGLM_GUI.state import agents
 
         with self._manager_lock:
             if device_id not in agents:
-                raise AgentNotInitializedError(
-                    f"Agent not initialized for device {device_id}. "
-                    f"Call /api/init first."
-                )
+                # 自动初始化：使用全局配置
+                self._auto_initialize_agent(device_id)
             return agents[device_id]
 
     def get_agent_safe(self, device_id: str) -> Optional[PhoneAgent]:
