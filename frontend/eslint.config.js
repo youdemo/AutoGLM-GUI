@@ -58,6 +58,7 @@ export default [
         requestAnimationFrame: 'readonly',
         cancelAnimationFrame: 'readonly',
         NodeJS: 'readonly',
+        __BACKEND_VERSION__: 'readonly',
       },
     },
     plugins: {

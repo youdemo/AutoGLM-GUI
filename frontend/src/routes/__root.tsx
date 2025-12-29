@@ -82,14 +82,15 @@ function Footer() {
     };
 
     checkForUpdates();
-  }, []);
+  }, [buildBackendVersion]);
 
   const displayedVersion = backendVersion ?? buildBackendVersion;
-  const versionTitle = versionMismatch && backendVersion
-    ? t.footer.versionMismatchDetail
-        .replace('{frontend}', buildBackendVersion)
-        .replace('{backend}', backendVersion)
-    : t.footer.buildVersion.replace('{version}', buildBackendVersion);
+  const versionTitle =
+    versionMismatch && backendVersion
+      ? t.footer.versionMismatchDetail
+          .replace('{frontend}', buildBackendVersion)
+          .replace('{backend}', backendVersion)
+      : t.footer.buildVersion.replace('{version}', buildBackendVersion);
 
   const toggleLocale = () => {
     setLocale(locale === 'en' ? 'zh' : 'en');
