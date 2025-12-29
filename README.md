@@ -40,9 +40,9 @@ AutoGLM 手机助手的现代化 Web 图形界面 - 让 AI 自动化操作 Andro
 
 | 操作系统 | 下载链接 | 说明 |
 |---------|---------|------|
-| 🪟 **Windows** (x64) | [📦 下载便携版 EXE](https://github.com/suyiiyii/AutoGLM-GUI/releases/download/v1.2.0/AutoGLM.GUI.1.2.0.exe) | 适用于 Windows 10/11，免安装 |
-| 🍎 **macOS** (Apple Silicon) | [📦 下载 DMG](https://github.com/suyiiyii/AutoGLM-GUI/releases/download/v1.2.0/AutoGLM.GUI-1.2.0-arm64.dmg) | 适用于 M 芯片 Mac |
-| 🐧 **Linux** (x64) | [📦 下载 AppImage](https://github.com/suyiiyii/AutoGLM-GUI/releases/download/v1.2.0/AutoGLM.GUI-1.2.0.AppImage) \| [deb](https://github.com/suyiiyii/AutoGLM-GUI/releases/download/v1.2.0/autoglm-gui_1.2.0_amd64.deb) \| [tar.gz](https://github.com/suyiiyii/AutoGLM-GUI/releases/download/v1.2.0/autoglm-gui-1.2.0.tar.gz) | 通用格式，支持主流发行版 |
+| 🪟 **Windows** (x64) | [📦 下载便携版 EXE](https://github.com/suyiiyii/AutoGLM-GUI/releases/download/v1.2.1/AutoGLM.GUI.1.2.1.exe) | 适用于 Windows 10/11，免安装 |
+| 🍎 **macOS** (Apple Silicon) | [📦 下载 DMG](https://github.com/suyiiyii/AutoGLM-GUI/releases/download/v1.2.1/AutoGLM.GUI-1.2.1-arm64.dmg) | 适用于 M 芯片 Mac |
+| 🐧 **Linux** (x64) | [📦 下载 AppImage](https://github.com/suyiiyii/AutoGLM-GUI/releases/download/v1.2.1/AutoGLM.GUI-1.2.1.AppImage) \| [deb](https://github.com/suyiiyii/AutoGLM-GUI/releases/download/v1.2.1/autoglm-gui_1.2.1_amd64.deb) \| [tar.gz](https://github.com/suyiiyii/AutoGLM-GUI/releases/download/v1.2.1/autoglm-gui-1.2.1.tar.gz) | 通用格式，支持主流发行版 |
 
 </div>
 
